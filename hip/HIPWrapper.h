@@ -22,7 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // MARK: - Wrapper
 
-@interface CIFWrapper : NSObject
+@interface HIPWrapper : NSObject
 
 // ── Individual CIF ─────────────────────────────────────────────────────────
 

@@ -1,10 +1,10 @@
-// CIFWrapper.mm — Objective-C++ (.mm required)
-#import "CIFWrapper.h"
+// HIPWrapper.mm — Objective-C++ (.mm required)
+#import "HIPWrapper.h"
 #include "CIFArchive.hpp"
 #include "CiftreeArchive.hpp"
 
 static NSError *cifError(NSString *message) {
-    return [NSError errorWithDomain:@"CIFWrapperError"
+    return [NSError errorWithDomain:@"HIPWrapperError"
                                code:1
                            userInfo:@{NSLocalizedDescriptionKey: message}];
 }
@@ -25,9 +25,9 @@ static NSData *vecToData(const std::vector<uint8_t>& v) {
 @implementation CiftreeFileEntry
 @end
 
-// MARK: - CIFWrapper
+// MARK: - HIPWrapper
 
-@implementation CIFWrapper
+@implementation HIPWrapper
 
 // ── Individual CIF ─────────────────────────────────────────────────────────
 

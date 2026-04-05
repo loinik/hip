@@ -59,16 +59,16 @@ final class AppViewModel: ObservableObject {
         do {
             let data: Data
             if ext == "png" {
-                data = try CIFWrapper.encodePNG(atPath: url.path) as Data
+                data = try HIPWrapper.encodePNG(atPath: url.path) as Data
             } else if ext == "lua" {
-                data = try CIFWrapper.encodeLua(atPath: url.path) as Data
+                data = try HIPWrapper.encodeLua(atPath: url.path) as Data
             } else {
                 return fail(name, "Unsupported format: .\(ext)")
             }
             let out = url.deletingPathExtension().appendingPathExtension("cif")
             try data.write(to: out)
             var detail = sizeStr(data.count)
-            if ext == "png", let info = try? CIFWrapper.readHeader(atPath: url.path) {
+            if ext == "png", let info = try? HIPWrapper.readHeader(atPath: url.path) {
                 detail = "\(info.width)x\(info.height) · " + detail
             }
             return ok(name, detail)
@@ -83,8 +83,8 @@ final class AppViewModel: ObservableObject {
             return fail(name, "Expected .cif file")
         }
         do {
-            let info   = try CIFWrapper.readHeader(atPath: url.path)
-            let data   = try CIFWrapper.decode(atPath: url.path) as Data
+            let info   = try HIPWrapper.readHeader(atPath: url.path)
+            let data   = try HIPWrapper.decode(atPath: url.path) as Data
             let outExt = info.isPNG ? "png" : (info.isLua ? "lua" : "bin")
             try data.write(to: url.deletingPathExtension().appendingPathExtension(outExt))
             var detail = sizeStr(data.count)
@@ -115,7 +115,7 @@ final class AppViewModel: ObservableObject {
         cifPaths.sort { $0.lastPathComponent < $1.lastPathComponent }
 
         do {
-            let data = try CIFWrapper.packCiftree(fromPaths: cifPaths.map(\.path)) as Data
+            let data = try HIPWrapper.packCiftree(fromPaths: cifPaths.map(\.path)) as Data
 
             let base = url.hasDirectoryPath ? url : url.deletingLastPathComponent()
             let suggestedName = url.hasDirectoryPath ? url.deletingPathExtension().lastPathComponent : "Ciftree"
@@ -142,7 +142,7 @@ final class AppViewModel: ObservableObject {
             return [fail(url.lastPathComponent, "Expected .dat archive")]
         }
         do {
-            let entries = try CIFWrapper.unpackCiftree(atPath: url.path)
+            let entries = try HIPWrapper.unpackCiftree(atPath: url.path)
             let outDir  = url.deletingPathExtension()
             try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
@@ -182,8 +182,7 @@ struct ContentView: View {
         .padding(16)
         .frame(minWidth: 600, minHeight: 400)
         .toolbar {
-            ToolbarSpacer(.flexible, placement: .automatic)
-            ToolbarItem(placement: .navigation) {
+            ToolbarItem(placement: .principal) {
                 Picker("Mode", selection: $vm.mode) {
                     ForEach(AppViewModel.Mode.allCases) { m in
                         Text(m.rawValue).tag(m)
@@ -258,7 +257,7 @@ struct ContentView: View {
         case .encode:  return "Drag PNG or Lua files"
         case .decode:  return "Drag .cif files"
         case .pack:    return "Drag a folder of .cif files"
-        case .unpack:  return "Drag a Ciftree .dat archive"
+        case .unpack:  return "Drag a Ciftree.dat archive"
         }
     }
     private var dropSubtitle: String {

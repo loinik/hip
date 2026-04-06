@@ -1,3 +1,6 @@
+// ContentView.swift
+// hip — HeR Interactive asset converter + inspector
+
 import SwiftUI
 import Combine
 import UniformTypeIdentifiers
@@ -30,7 +33,7 @@ enum AppMode {
 // MARK: - File-kind detection
 
 enum HIPFileKind {
-    case cif, his, dat, lua, image, ogg, folder, unknown
+    case cif, his, dat, lua, image, ogg, xsheet, folder, unknown
 
     static func from(_ url: URL) -> HIPFileKind {
         if url.hasDirectoryPath { return .folder }
@@ -41,20 +44,21 @@ enum HIPFileKind {
         case "lua":                return .lua
         case "png", "jpg", "jpeg": return .image
         case "ogg":                return .ogg
+        case "xsheet":             return .xsheet
         default:                   return .unknown
         }
     }
 
     var suggestedConversionMode: (AppCategory, AppDirection)? {
         switch self {
-        case .cif:     return (.cif,     .backward)   // CIF → File
-        case .his:     return (.his,     .backward)   // HIS → OGG
-        case .dat:     return (.ciftree, .backward)   // Unpack
-        case .lua:     return (.cif,     .forward)    // Lua → CIF (compile)
-        case .image:   return (.cif,     .forward)    // PNG/JPG → CIF
-        case .ogg:     return (.his,     .forward)    // OGG → HIS
-        case .folder:  return (.ciftree, .forward)    // pack to .dat
-        case .unknown: return nil
+        case .cif:     return (.cif,     .backward)
+        case .his:     return (.his,     .backward)
+        case .dat:     return (.ciftree, .backward)
+        case .lua:     return (.cif,     .forward)
+        case .image:   return (.cif,     .forward)
+        case .ogg:     return (.his,     .forward)
+        case .folder:  return (.ciftree, .forward)
+        case .xsheet, .unknown: return nil
         }
     }
 }
@@ -81,6 +85,9 @@ final class AppViewModel: ObservableObject {
     @Published var isDragging   = false
     @Published var compileLua   = true
     @Published var decompileLua = false
+    /// Sea of Darkness compatibility: encode PNG as CIF type 4 (OVL) instead of type 2.
+    /// TODO: requires HIPWrapper.encodePNG(atPath:cifType:error:) — add uint32 type param to C++ side.
+    @Published var useType4PNG  = false
 
     func clearResults() { withAnimation { results = [] } }
 
@@ -128,6 +135,7 @@ final class AppViewModel: ObservableObject {
     private func encodeCIF(_ url: URL) -> ConversionResult {
         let name = url.lastPathComponent
         let ext  = url.pathExtension.lowercased()
+        // useType4PNG is wired in UI; C++ side needs HIPWrapper.encodePNG(atPath:cifType:error:)
         do {
             let data: Data
             switch ext {
@@ -167,10 +175,10 @@ final class AppViewModel: ObservableObject {
 
             let outExt: String
             switch info.type {
-            case 2:  outExt = "png"
-            case 3:  outExt = "lua"
-            case 6:  outExt = "xsheet"
-            default: outExt = "bin"
+            case 2, 4: outExt = "png"      // type 4 = OVL (Sea of Darkness overlay PNG)
+            case 3:    outExt = "lua"
+            case 6:    outExt = "xsheet"
+            default:   outExt = "bin"
             }
 
             let outURL = url.deletingPathExtension().appendingPathExtension(outExt)
@@ -178,18 +186,15 @@ final class AppViewModel: ObservableObject {
             // ── Lua ──────────────────────────────────────────────────────
             if info.isLua {
                 try data.write(to: outURL)
-
                 let isCompiled = data.count >= 4
                     && data[0] == 0x1B && data[1] == 0x4C
                     && data[2] == 0x75 && data[3] == 0x61
-
                 guard isCompiled else {
                     return [ok(name, "→ .lua  \(sizeStr(data.count)) · source")]
                 }
                 guard decompileLua else {
                     return [ok(name, "→ .lua  \(sizeStr(data.count)) · bytecode")]
                 }
-
                 do {
                     let source = try HIPWrapper.decompileLua(atPath: outURL.path)
                     guard !source.isEmpty else {
@@ -208,11 +213,12 @@ final class AppViewModel: ObservableObject {
                 }
             }
 
-            // ── PNG / XSheet / other ─────────────────────────────────────
+            // ── PNG (type 2 or 4) / XSheet / other ──────────────────────
             try data.write(to: outURL)
             var detail = sizeStr(data.count)
-            if info.isPNG    { detail = "\(info.width)×\(info.height) · " + detail }
-            if info.isXSheet { detail = "XSheet · " + detail }
+            if info.isPNG || info.type == 4 { detail = "\(info.width)×\(info.height) · " + detail }
+            if info.isXSheet               { detail = "XSheet · " + detail }
+            if info.type == 4              { detail += " · OVL" }
             return [ok(name, "→ .\(outExt)  " + detail)]
 
         } catch { return [fail(name, error.localizedDescription)] }
@@ -229,10 +235,8 @@ final class AppViewModel: ObservableObject {
             at: url, includingPropertiesForKeys: nil) else {
             return [fail(url.lastPathComponent, "Cannot read folder")]
         }
-
         var cifEntries: [(name: String, data: Data)] = []
         var warnings:   [ConversionResult] = []
-
         for file in contents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let ext  = file.pathExtension.lowercased()
             let stem = file.deletingPathExtension().lastPathComponent
@@ -254,24 +258,20 @@ final class AppViewModel: ObservableObject {
                 warnings.append(fail(file.lastPathComponent, error.localizedDescription))
             }
         }
-
         guard !cifEntries.isEmpty else {
             return [fail(url.lastPathComponent, "No supported files found in folder")]
         }
-
         do {
             let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(UUID().uuidString)
             try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
             defer { try? fm.removeItem(at: tmpDir) }
-
             var tmpPaths: [String] = []
             for entry in cifEntries {
                 let f = tmpDir.appendingPathComponent(entry.name + ".cif")
                 try entry.data.write(to: f)
                 tmpPaths.append(f.path)
             }
-
             let packed = try HIPWrapper.packCiftree(fromPaths: tmpPaths) as Data
             let panel  = NSSavePanel()
             panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".dat"
@@ -280,7 +280,6 @@ final class AppViewModel: ObservableObject {
                 return [fail(url.lastPathComponent, "Save cancelled")]
             }
             try packed.write(to: dest)
-
             return cifEntries.map {
                 ConversionResult(icon: "archivebox.fill", tint: .blue,
                                  title: $0.name + ".cif",
@@ -298,13 +297,11 @@ final class AppViewModel: ObservableObject {
         do {
             let entries = try HIPWrapper.unpackCiftree(atPath: url.path)
             let outDir  = url.deletingPathExtension()
-            try FileManager.default.createDirectory(at: outDir,
-                                                    withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
             var rows: [ConversionResult] = []
             for entry in entries {
                 let outURL = outDir.appendingPathComponent(entry.name + ".cif")
                 try entry.cifData.write(to: outURL)
-
                 if decompileLua {
                     rows.append(contentsOf: decodeCIF(outURL))
                 } else {
@@ -386,15 +383,12 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        // Convertation mode
         ToolbarItem(placement: .principal) {
             Picker("", selection: $vm.category) {
                 ForEach(AppCategory.allCases) { c in Text(c.rawValue).tag(c) }
             }
             .pickerStyle(.segmented)
         }
-        
-        // Open to preview (⌘O)
         ToolbarItem(placement: .confirmationAction) {
             Button(action: openFileForPreview) {
                 Label("Open…", systemImage: "folder")
@@ -421,6 +415,10 @@ struct ContentView: View {
                 Toggle("Compile Lua", isOn: $vm.compileLua)
                     .toggleStyle(.checkbox)
                     .help("Compile .lua source to bytecode before packing")
+                Divider().frame(height: 18)
+                Toggle("Type 4 PNG", isOn: $vm.useType4PNG)
+                    .toggleStyle(.checkbox)
+                    .help("Sea of Darkness: encode PNG as CIF type 4 (OVL overlay) instead of type 2\n⚠ Requires HIPWrapper.encodePNG(atPath:cifType:error:) — see TODO in AppViewModel")
 
             case .cifDecode, .ciftreeUnpack:
                 Divider().frame(height: 18)
@@ -472,13 +470,10 @@ struct ContentView: View {
                 .font(.system(size: 38, weight: .regular))
                 .foregroundStyle(.secondary)
                 .symbolEffect(.bounce, value: vm.isDragging)
-
             Text(dropTitle).font(.headline)
-
             Text(dropSubtitle)
                 .font(.subheadline).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-
             Button(chooseLabel, action: openPanel)
                 .buttonStyle(.glass)
                 .buttonBorderShape(.capsule)
@@ -584,14 +579,15 @@ struct ContentView: View {
         panel.allowsMultipleSelection = true
         panel.message                 = "Choose a file to inspect"
         panel.allowedContentTypes     = [
-            UTType(filenameExtension: "cif")  ?? .data,
-            UTType(filenameExtension: "his")  ?? .data,
-            UTType(filenameExtension: "dat")  ?? .data,
-            UTType(filenameExtension: "lua")  ?? .data,
-            UTType(filenameExtension: "ogg")  ?? .data,
+            UTType(filenameExtension: "cif")    ?? .data,
+            UTType(filenameExtension: "his")    ?? .data,
+            UTType(filenameExtension: "dat")    ?? .data,
+            UTType(filenameExtension: "lua")    ?? .data,
+            UTType(filenameExtension: "ogg")    ?? .data,
+            UTType(filenameExtension: "xsheet") ?? .data,
             .png,
-            UTType(filenameExtension: "jpg")  ?? .data,
-            UTType(filenameExtension: "jpeg") ?? .data,
+            UTType(filenameExtension: "jpg")    ?? .data,
+            UTType(filenameExtension: "jpeg")   ?? .data,
         ]
         if panel.runModal() == .OK {
             for url in panel.urls {
@@ -631,7 +627,7 @@ struct ContentView: View {
         if panel.runModal() == .OK { vm.processURLs(panel.urls) }
     }
 
-    // MARK: Drop handler — detects mode by extension
+    // MARK: Drop handler — auto-detects mode
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         var urls: [URL] = []
@@ -647,7 +643,7 @@ struct ContentView: View {
         }
         group.notify(queue: .main) {
             guard !urls.isEmpty else { return }
-            self.vm.autoSwitchMode(for: urls)   // ← changing picker
+            self.vm.autoSwitchMode(for: urls)
             self.vm.processURLs(urls)
         }
         return true
@@ -664,7 +660,6 @@ struct ResultRow: View {
                 .foregroundStyle(result.tint)
                 .font(.system(size: 17, weight: .medium))
                 .frame(width: 28, height: 28, alignment: .center)
-
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.title).font(.system(.body, design: .monospaced)).lineLimit(1)
                 Text(result.detail).font(.caption).foregroundStyle(.secondary)
@@ -683,27 +678,25 @@ struct FilePreviewWindowView: View {
     var body: some View {
         Group {
             switch HIPFileKind.from(url) {
-            case .cif:   CIFPreviewView(url: url)
-            case .his:   HISPreviewView(url: url)
-            case .dat:   DatPreviewView(url: url)
-            case .lua:   LuaPreviewView(url: url)
-            case .image: PlainImagePreviewView(url: url)
-            case .ogg:   OGGPreviewView(url: url)
+            case .cif:    CIFPreviewView(url: url)
+            case .his:    HISPreviewView(url: url)
+            case .dat:    DatPreviewView(url: url)
+            case .lua:    LuaPreviewView(url: url)
+            case .image:  PlainImagePreviewView(url: url)
+            case .ogg:    OGGPreviewView(url: url)
+            case .xsheet: XSheetPreviewView(url: url)
             default:
                 ContentUnavailableView(
                     "Cannot Preview",
                     systemImage: "questionmark.circle",
-                    description: Text("No preview available for \(url.pathExtension.uppercased()) files.")
-                )
+                    description: Text("No preview available for \(url.pathExtension.uppercased()) files."))
             }
         }
         .navigationTitle(url.lastPathComponent)
         .navigationSubtitle(url.deletingLastPathComponent().abbreviatingWithTildeInPath)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                } label: {
+                Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
                     Label("Reveal in Finder", systemImage: "folder")
                 }
                 .help("Reveal in Finder")
@@ -712,19 +705,32 @@ struct FilePreviewWindowView: View {
     }
 }
 
-// MARK: CIF Preview ─────────────────────────────────────────────────────────────
+// MARK: - Data helpers (little-endian reads)
 
+private extension Data {
+    func le32(at offset: Int) -> UInt32 {
+        guard offset + 4 <= count else { return 0 }
+        let range = offset..<(offset + 4)
+        let value = self[range].withUnsafeBytes { rawBuffer in
+            rawBuffer.load(as: UInt32.self)
+        }
+        return UInt32(littleEndian: value)
+    }
+}
+
+// MARK: - CIF Preview ────────────────────────────────────────────────────────
+
+/// What CIF body contains after decoding the header.
 private enum CIFContent {
-    case image(NSImage, width: Int32, height: Int32)
+    case image(NSImage, width: Int32, height: Int32, isOverlay: Bool)
     case luaSource(String)
     case luaBytecode(Int)
-    case xsheet(String)
+    case xsheet(Data)          // raw xsheet bytes — parsed in XSheetBodyView
     case raw(type: Int32, size: Int)
 }
 
 struct CIFPreviewView: View {
     let url: URL
-
     @State private var content:      CIFContent?
     @State private var errorMessage: String?
 
@@ -737,14 +743,14 @@ struct CIFPreviewView: View {
                     description: Text(err))
             } else if let c = content {
                 switch c {
-                case .image(let img, let w, let h):
-                    CIFImageView(image: img, width: w, height: h, sourceURL: url)
+                case .image(let img, let w, let h, let ovl):
+                    CIFImageView(image: img, width: w, height: h, isOverlay: ovl, sourceURL: url)
                 case .luaSource(let text):
                     CodeView(text: text, badge: "Lua source", icon: "doc.text")
                 case .luaBytecode(let bytes):
-                    BytecodeView(bytes: bytes, sourceURL: url)
-                case .xsheet(let text):
-                    CodeView(text: text, badge: "XSheet", icon: "tablecells")
+                    BytecodeView(bytes: bytes)
+                case .xsheet(let data):
+                    XSheetBodyView(data: data, sourceURL: url)
                 case .raw(let type, let size):
                     ContentUnavailableView(
                         "Unknown CIF type \(type)",
@@ -765,12 +771,16 @@ struct CIFPreviewView: View {
             let info = try HIPWrapper.readHeader(atPath: url.path)
             let data = try HIPWrapper.decode(atPath: url.path) as Data
 
-            if info.isPNG {
+            // Type 2 = standard PNG; type 4 = OVL overlay PNG (Sea of Darkness)
+            if info.isPNG || info.type == 4 {
                 guard let img = NSImage(data: data) else {
                     throw NSError(domain: "hip", code: 1,
                                   userInfo: [NSLocalizedDescriptionKey: "Failed to decode image data"])
                 }
-                content = .image(img, width: Int32(info.width), height: Int32(info.height))
+                content = .image(img,
+                                 width: Int32(info.width),
+                                 height: Int32(info.height),
+                                 isOverlay: info.type == 4)
 
             } else if info.isLua {
                 let isCompiled = data.count >= 4
@@ -779,17 +789,14 @@ struct CIFPreviewView: View {
                 if isCompiled {
                     content = .luaBytecode(data.count)
                 } else {
-                    let text = String(data: data, encoding: .utf8)
-                           ?? String(data: data, encoding: .isoLatin1)
-                           ?? "<non-decodable>"
-                    content = .luaSource(text)
+                    content = .luaSource(
+                        String(data: data, encoding: .utf8)
+                        ?? String(data: data, encoding: .isoLatin1)
+                        ?? "<non-decodable>")
                 }
 
             } else if info.isXSheet {
-                let text = String(data: data, encoding: .utf8)
-                       ?? String(data: data, encoding: .isoLatin1)
-                       ?? "<non-decodable>"
-                content = .xsheet(text)
+                content = .xsheet(data)
 
             } else {
                 content = .raw(type: Int32(info.type), size: data.count)
@@ -800,31 +807,60 @@ struct CIFPreviewView: View {
     }
 }
 
-// Additional sub-view for CIF Preview
+// Sub-views for CIF Preview
 
 private struct CIFImageView: View {
-    let image: NSImage
-    let width: Int32
-    let height: Int32
+    let image:     NSImage
+    let width:     Int32
+    let height:    Int32
+    let isOverlay: Bool
     let sourceURL: URL
 
     var body: some View {
         VStack(spacing: 0) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Checkerboard background for overlays (alpha channel visible)
+            ZStack {
+                if isOverlay { CheckerboardView() }
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
             HStack(spacing: 12) {
+                if isOverlay {
+                    Label("OVL overlay · type 4", systemImage: "square.on.square")
+                        .foregroundStyle(.orange)
+                }
                 Label("\(width) × \(height) px", systemImage: "photo")
                 Spacer()
-                Text(sourceURL.lastPathComponent)
-                    .foregroundStyle(.secondary)
+                Text(sourceURL.lastPathComponent).foregroundStyle(.secondary)
             }
             .font(.caption)
             .padding(.horizontal, 16).padding(.vertical, 8)
+        }
+    }
+}
+
+/// Simple checkerboard pattern for alpha transparency preview.
+private struct CheckerboardView: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let tile: CGFloat = 12
+            var alt = false
+            var y: CGFloat = 0
+            while y < size.height {
+                var x: CGFloat = 0
+                while x < size.width {
+                    let color: Color = alt ? Color(white: 0.75) : Color(white: 0.9)
+                    ctx.fill(Path(CGRect(x: x, y: y, width: tile, height: tile)),
+                             with: .color(color))
+                    x += tile; alt.toggle()
+                }
+                y += tile; alt.toggle()
+            }
         }
     }
 }
@@ -837,8 +873,7 @@ private struct CodeView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label(badge, systemImage: icon)
-                    .font(.caption).foregroundStyle(.secondary)
+                Label(badge, systemImage: icon).font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
@@ -855,23 +890,17 @@ private struct CodeView: View {
 }
 
 private struct BytecodeView: View {
-    let bytes:     Int
-    let sourceURL: URL
-
+    let bytes: Int
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "lock.doc.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(.secondary)
-
+                .font(.system(size: 52)).foregroundStyle(.secondary)
             VStack(spacing: 4) {
-                Text("Compiled Lua bytecode")
-                    .font(.headline)
-                Text("\(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
+                Text("Compiled Lua bytecode").font(.headline)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
                     .font(.subheadline).foregroundStyle(.secondary)
             }
-
             Text("Use the converter (CIF → File) with **Decompile Lua** enabled\nto extract readable source code.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -881,14 +910,172 @@ private struct BytecodeView: View {
     }
 }
 
-// MARK: HIS Preview
+// MARK: - XSheet Format ─────────────────────────────────────────────────────────
+//
+// Binary format: "XSHEET HerInteractive\0..." (magic, padded to 28 bytes)
+// then some header bytes, then a null-terminated CNV name (associated PNG),
+// then a large zero-padded area, then:
+//   [x1: uint32][y1: uint32][x2: uint32][y2: uint32]  ← bounding rect
+//   [8 bytes padding / secondary data]
+//   [frameCount: uint32]
+//   [frame_0: 6×uint32 = 24 bytes]  ← first uint32 = frame index
+//   ...
+//   [frame_N: 6×uint32]
+
+private struct ParsedXSheet {
+    let cnvName:    String       // e.g. "MK_FINDB01_CNV"
+    let x1, y1:    Int          // bounding rect origin
+    let x2, y2:    Int          // bounding rect extent
+    let frameCount: Int
+}
+
+private func parseXSheet(_ data: Data) -> ParsedXSheet? {
+    let magic = [UInt8]("XSHEET HerInteractive".utf8)
+    guard data.count >= 80, data.prefix(21).elementsEqual(magic) else { return nil }
+
+    // -- CNV name: scan for first run of printable ASCII after byte 28
+    var cnvName = ""
+    var i = 28
+    while i < min(data.count, 250) {
+        if data[i] >= 0x41 && data[i] < 0x7F {  // start of printable run
+            var nb: [UInt8] = []
+            while i < data.count && data[i] >= 0x20 && data[i] < 0x7F {
+                nb.append(data[i]); i += 1
+            }
+            let candidate = String(bytes: nb, encoding: .utf8) ?? ""
+            if candidate.count >= 3 { cnvName = candidate; break }
+        }
+        i += 1
+    }
+
+    // -- Frame count and bounding rect: scan from end
+    //    Strategy: find N such that data[-N*24-4 .. -N*24-1] == N (LE uint32)
+    //    and verify frame 0 starts with 0, frame 1 with 1, etc.
+    var frameCount = 0
+    var fcOff      = -1
+
+    let maxFrames = min(500, (data.count - 50) / 24)
+    for k in 1...maxFrames {
+        let pos = data.count - k * 24 - 4
+        if pos < 50 { break }
+        guard Int(data.le32(at: pos)) == k else { continue }
+        // Verify sequential frame indices
+        var valid = true
+        for f in 0..<min(k, 4) {
+            if Int(data.le32(at: pos + 4 + f * 24)) != f { valid = false; break }
+        }
+        if valid { frameCount = k; fcOff = pos; break }
+    }
+
+    guard fcOff >= 24 else { return nil }
+
+    // Bounding rect: 16 bytes of rect + 8 bytes padding before frameCount
+    let rectOff = fcOff - 8 - 16
+    guard rectOff >= 0 else { return nil }
+
+    let x1 = Int(data.le32(at: rectOff))
+    let y1 = Int(data.le32(at: rectOff + 4))
+    let x2 = Int(data.le32(at: rectOff + 8))
+    let y2 = Int(data.le32(at: rectOff + 12))
+
+    // Sanity check: coords should be plausible screen coordinates
+    guard x1 >= 0, y1 >= 0, x2 > x1, y2 > y1, x2 < 4096, y2 < 4096 else {
+        return ParsedXSheet(cnvName: cnvName, x1: 0, y1: 0, x2: 0, y2: 0, frameCount: frameCount)
+    }
+
+    return ParsedXSheet(cnvName: cnvName, x1: x1, y1: y1, x2: x2, y2: y2, frameCount: frameCount)
+}
+
+/// XSheet view used inside CIF preview (body bytes already extracted from CIF).
+struct XSheetBodyView: View {
+    let data:      Data
+    let sourceURL: URL
+    @State private var parsed: ParsedXSheet?
+
+    var body: some View {
+        Group {
+            if let p = parsed {
+                xsheetContent(p)
+            } else {
+                ContentUnavailableView(
+                    "Cannot parse XSheet",
+                    systemImage: "tablecells",
+                    description: Text("Unrecognised XSHEET format."))
+            }
+        }
+        .task { parsed = parseXSheet(data) }
+    }
+
+    @ViewBuilder
+    private func xsheetContent(_ p: ParsedXSheet) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("XSheet Sprite Data", systemImage: "tablecells")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text(sourceURL.lastPathComponent).font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            Divider()
+            List {
+                Section("Source Image") {
+                    LabeledContent("CNV name") {
+                        Text(p.cnvName.isEmpty ? "(unknown)" : p.cnvName)
+                            .font(.system(.body, design: .monospaced))
+                    }
+                }
+                Section("Bounding Rect") {
+                    LabeledContent("Origin (x1, y1)") { Text("\(p.x1), \(p.y1)") }
+                    LabeledContent("Extent (x2, y2)") { Text("\(p.x2), \(p.y2)") }
+                    LabeledContent("Sprite size")     { Text("\(p.x2 - p.x1) × \(p.y2 - p.y1) px") }
+                }
+                Section("Animation") {
+                    LabeledContent("Frame count") { Text("\(p.frameCount)") }
+                }
+            }
+            .listStyle(.inset)
+        }
+    }
+}
+
+/// XSheet view for standalone .xsheet files opened via ⌘O / Finder.
+struct XSheetPreviewView: View {
+    let url: URL
+    @State private var parsed: ParsedXSheet?
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if !loaded {
+                ProgressView("Parsing…")
+            } else if let p = parsed {
+                XSheetBodyView(data: (try? Data(contentsOf: url)) ?? Data(), sourceURL: url)
+                    .task {}  // reuse body view; data already loaded
+            } else {
+                ContentUnavailableView(
+                    "Invalid XSheet",
+                    systemImage: "tablecells",
+                    description: Text("Not a valid XSHEET HerInteractive file."))
+            }
+        }
+        .frame(minWidth: 400, minHeight: 280)
+        .task {
+            if let data = try? Data(contentsOf: url) {
+                parsed = parseXSheet(data)
+            }
+            loaded = true
+        }
+    }
+}
+
+// MARK: - HIS Preview ────────────────────────────────────────────────────────
 
 @MainActor
 final class HISAudioController: ObservableObject {
-    @Published var isPlaying    = false
+    @Published var isPlaying     = false
     @Published var decodedBytes: Int?
     @Published var errorMessage: String?
-    @Published var canPlay      = false
+    @Published var canPlay       = false
 
     private var player:  AVAudioPlayer?
     private var tempURL: URL?
@@ -897,19 +1084,12 @@ final class HISAudioController: ObservableObject {
         do {
             let oggData = try HIPWrapper.decodeHIS(atPath: url.path) as Data
             decodedBytes = oggData.count
-
             let tmp = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString + ".ogg")
             try oggData.write(to: tmp)
             tempURL = tmp
-
-            if let p = try? AVAudioPlayer(contentsOf: tmp) {
-                player  = p
-                canPlay = true
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+            if let p = try? AVAudioPlayer(contentsOf: tmp) { player = p; canPlay = true }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func toggle() {
@@ -928,9 +1108,7 @@ final class HISAudioController: ObservableObject {
         }
     }
 
-    deinit {
-        if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
-    }
+    deinit { if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) } }
 }
 
 struct HISPreviewView: View {
@@ -940,26 +1118,17 @@ struct HISPreviewView: View {
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-
             Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(.tint)
+                .font(.system(size: 72)).foregroundStyle(.tint)
                 .symbolEffect(.pulse, isActive: ctrl.isPlaying)
-
             VStack(spacing: 6) {
-                Text(url.deletingPathExtension().lastPathComponent)
-                    .font(.title2.weight(.semibold))
-
+                Text(url.deletingPathExtension().lastPathComponent).font(.title2.weight(.semibold))
                 if let bytes = ctrl.decodedBytes {
                     Text("OGG Vorbis · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                if let err = ctrl.errorMessage {
-                    Text(err).font(.caption).foregroundStyle(.red)
-                }
+                if let err = ctrl.errorMessage { Text(err).font(.caption).foregroundStyle(.red) }
             }
-
-            // Play / Pause
             Button { ctrl.toggle() } label: {
                 Image(systemName: ctrl.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 52))
@@ -967,18 +1136,13 @@ struct HISPreviewView: View {
             .buttonStyle(.plain)
             .foregroundStyle(ctrl.canPlay ? Color.accentColor : .secondary)
             .disabled(!ctrl.canPlay)
-            .help(ctrl.canPlay
-                  ? "Play / Pause"
-                  : "Native OGG playback unavailable — connect stb_vorbis PCM path (see TODO in HISAudioController)")
-
-            // Export
+            .help(ctrl.canPlay ? "Play / Pause"
+                               : "Native OGG playback unavailable — connect stb_vorbis PCM path")
             Button("Export as OGG…") {
                 ctrl.exportOGG(suggestedName: url.deletingPathExtension().lastPathComponent)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.capsule)
+            .buttonStyle(.glass).buttonBorderShape(.capsule)
             .disabled(ctrl.decodedBytes == nil)
-
             Spacer()
         }
         .frame(minWidth: 340, minHeight: 340)
@@ -986,7 +1150,7 @@ struct HISPreviewView: View {
     }
 }
 
-// MARK: DAT (Ciftree) Preview ────────────────────────────────────────────────────
+// MARK: - DAT (Ciftree) Preview ──────────────────────────────────────────────
 
 private struct DatEntry: Identifiable {
     let id   = UUID()
@@ -996,7 +1160,6 @@ private struct DatEntry: Identifiable {
 
 struct DatPreviewView: View {
     let url: URL
-
     @State private var entries:      [DatEntry] = []
     @State private var isLoading     = true
     @State private var errorMessage: String?
@@ -1005,19 +1168,12 @@ struct DatPreviewView: View {
         Group {
             if isLoading {
                 ProgressView("Reading archive…")
-
             } else if let err = errorMessage {
-                ContentUnavailableView(
-                    "Read Error",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(err))
-
+                ContentUnavailableView("Read Error", systemImage: "exclamationmark.triangle",
+                                       description: Text(err))
             } else if entries.isEmpty {
-                ContentUnavailableView(
-                    "Empty Archive",
-                    systemImage: "archivebox",
-                    description: Text("No entries found in this .dat file."))
-
+                ContentUnavailableView("Empty Archive", systemImage: "archivebox",
+                                       description: Text("No entries found in this .dat file."))
             } else {
                 VStack(spacing: 0) {
                     HStack {
@@ -1031,17 +1187,13 @@ struct DatPreviewView: View {
                     }
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     Divider()
-
                     List(entries) { entry in
                         HStack(spacing: 12) {
-                            Image(systemName: "doc.fill")
-                                .foregroundStyle(.tint)
-                                .frame(width: 20)
-                            Text(entry.name + ".cif")
-                                .font(.system(.body, design: .monospaced))
+                            Image(systemName: "doc.fill").foregroundStyle(.tint).frame(width: 20)
+                            Text(entry.name + ".cif").font(.system(.body, design: .monospaced))
                             Spacer()
-                            Text(ByteCountFormatter.string(
-                                fromByteCount: Int64(entry.size), countStyle: .file))
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(entry.size),
+                                                           countStyle: .file))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 2)
@@ -1056,16 +1208,14 @@ struct DatPreviewView: View {
 
     private func loadDat() async {
         do {
-            let raw   = try HIPWrapper.unpackCiftree(atPath: url.path)
-            entries   = raw.map { DatEntry(name: $0.name, size: $0.cifData.count) }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+            let raw = try HIPWrapper.unpackCiftree(atPath: url.path)
+            entries = raw.map { DatEntry(name: $0.name, size: $0.cifData.count) }
+        } catch { errorMessage = error.localizedDescription }
         isLoading = false
     }
 }
 
-// MARK: Lua Preview ──────────────────────────────────────────────────────────────
+// MARK: - Lua Preview ─────────────────────────────────────────────────────────
 
 struct LuaPreviewView: View {
     let url: URL
@@ -1075,10 +1225,8 @@ struct LuaPreviewView: View {
     var body: some View {
         Group {
             if let err = errorMessage {
-                ContentUnavailableView(
-                    "Read Error",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(err))
+                ContentUnavailableView("Read Error", systemImage: "exclamationmark.triangle",
+                                       description: Text(err))
             } else if let src = source {
                 CodeView(text: src, badge: "Lua source", icon: "doc.text")
             } else {
@@ -1087,10 +1235,7 @@ struct LuaPreviewView: View {
         }
         .frame(minWidth: 500, minHeight: 360)
         .task {
-            do {
-                source = try String(contentsOf: url, encoding: .utf8)
-            } catch {
-                // Try with latin-1 if UTF-8 doesn't work
+            do { source = try String(contentsOf: url, encoding: .utf8) } catch {
                 source = try? String(contentsOf: url, encoding: .isoLatin1)
                 if source == nil { errorMessage = error.localizedDescription }
             }
@@ -1098,7 +1243,7 @@ struct LuaPreviewView: View {
     }
 }
 
-// MARK: Plain Image Preview ──────────────────────────────────────────────────────
+// MARK: - Plain Image Preview ─────────────────────────────────────────────────
 
 struct PlainImagePreviewView: View {
     let url: URL
@@ -1109,31 +1254,24 @@ struct PlainImagePreviewView: View {
             if let img = image {
                 VStack(spacing: 0) {
                     Image(nsImage: img)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .resizable().aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                     Divider()
-
                     HStack {
-                        Label("\(Int(img.size.width)) × \(Int(img.size.height)) px",
-                              systemImage: "photo")
+                        Label("\(Int(img.size.width)) × \(Int(img.size.height)) px", systemImage: "photo")
                         Spacer()
                         Text(url.lastPathComponent).foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .font(.caption).padding(.horizontal, 16).padding(.vertical, 8)
                 }
-            } else {
-                ProgressView("Loading…")
-            }
+            } else { ProgressView("Loading…") }
         }
         .frame(minWidth: 300, minHeight: 200)
         .task { image = NSImage(contentsOf: url) }
     }
 }
 
-// MARK: OGG Preview ──────────────────────────────────────────────────────────────
+// MARK: - OGG Preview ─────────────────────────────────────────────────────────
 
 struct OGGPreviewView: View {
     let url: URL
@@ -1143,15 +1281,10 @@ struct OGGPreviewView: View {
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-
             Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(.tint)
+                .font(.system(size: 72)).foregroundStyle(.tint)
                 .symbolEffect(.pulse, isActive: isPlaying)
-
-            Text(url.deletingPathExtension().lastPathComponent)
-                .font(.title2.weight(.semibold))
-
+            Text(url.deletingPathExtension().lastPathComponent).font(.title2.weight(.semibold))
             Button {
                 guard let p = player else { return }
                 if isPlaying { p.pause() } else { p.play() }
@@ -1163,10 +1296,7 @@ struct OGGPreviewView: View {
             .buttonStyle(.plain)
             .foregroundStyle(player == nil ? Color.secondary : Color.accentColor)
             .disabled(player == nil)
-            .help(player == nil
-                  ? "OGG playback requires a system OGG codec"
-                  : "Play / Pause")
-
+            .help(player == nil ? "OGG playback requires a system OGG codec" : "Play / Pause")
             Spacer()
         }
         .frame(minWidth: 320, minHeight: 320)
@@ -1174,7 +1304,7 @@ struct OGGPreviewView: View {
     }
 }
 
-// MARK: - URL path helper
+// MARK: - URL helper
 
 private extension URL {
     var abbreviatingWithTildeInPath: String {

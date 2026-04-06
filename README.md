@@ -1,6 +1,6 @@
 # HIP Toolkit
 
-A development kup for extracting, compiling, and decompiling game archives from **HeR Interactive** adventure games (Nancy Drew series).
+A development kit for extracting, compiling, and decompiling game archives from **HeR Interactive** adventure games (Nancy Drew series).
 
 ## Overview
 

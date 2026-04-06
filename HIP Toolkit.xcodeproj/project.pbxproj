@@ -147,7 +147,7 @@
 		EE61877D2F83721300EB6D27 /* hipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = hipApp.swift; sourceTree = "<group>"; };
 		EE61877E2F83721300EB6D27 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		EE61878C2F83723A00EB6D27 /* hip-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "hip-Bridging-Header.h"; sourceTree = "<group>"; };
-		EE6F8A272F7A4C38005E4E41 /* hip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = hip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EE6F8A272F7A4C38005E4E41 /* HIP Toolkit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HIP Toolkit.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -330,7 +330,7 @@
 		EE6F8A282F7A4C38005E4E41 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				EE6F8A272F7A4C38005E4E41 /* hip.app */,
+				EE6F8A272F7A4C38005E4E41 /* HIP Toolkit.app */,
 				EE61873C2F82B9D100EB6D27 /* HIPQuickLook.appex */,
 			);
 			name = Products;
@@ -361,9 +361,9 @@
 			productReference = EE61873C2F82B9D100EB6D27 /* HIPQuickLook.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		EE6F8A262F7A4C38005E4E41 /* hip */ = {
+		EE6F8A262F7A4C38005E4E41 /* HIP Toolkit */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EE6F8A322F7A4C3A005E4E41 /* Build configuration list for PBXNativeTarget "hip" */;
+			buildConfigurationList = EE6F8A322F7A4C3A005E4E41 /* Build configuration list for PBXNativeTarget "HIP Toolkit" */;
 			buildPhases = (
 				EE6F8A232F7A4C38005E4E41 /* Sources */,
 				EE6F8A242F7A4C38005E4E41 /* Frameworks */,
@@ -375,11 +375,11 @@
 			dependencies = (
 				EE61874A2F82B9D100EB6D27 /* PBXTargetDependency */,
 			);
-			name = hip;
+			name = "HIP Toolkit";
 			packageProductDependencies = (
 			);
 			productName = hip;
-			productReference = EE6F8A272F7A4C38005E4E41 /* hip.app */;
+			productReference = EE6F8A272F7A4C38005E4E41 /* HIP Toolkit.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -401,7 +401,7 @@
 					};
 				};
 			};
-			buildConfigurationList = EE6F8A222F7A4C38005E4E41 /* Build configuration list for PBXProject "hip" */;
+			buildConfigurationList = EE6F8A222F7A4C38005E4E41 /* Build configuration list for PBXProject "HIP Toolkit" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -415,7 +415,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EE6F8A262F7A4C38005E4E41 /* hip */,
+				EE6F8A262F7A4C38005E4E41 /* HIP Toolkit */,
 				EE61873B2F82B9D100EB6D27 /* HIPQuickLook */,
 			);
 		};
@@ -723,7 +723,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.2.0;
-				PRODUCT_BUNDLE_IDENTIFIER = loinik.hip;
+				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -776,7 +776,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.2.0;
-				PRODUCT_BUNDLE_IDENTIFIER = loinik.hip;
+				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -801,7 +801,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EE6F8A222F7A4C38005E4E41 /* Build configuration list for PBXProject "hip" */ = {
+		EE6F8A222F7A4C38005E4E41 /* Build configuration list for PBXProject "HIP Toolkit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EE6F8A302F7A4C3A005E4E41 /* Debug */,
@@ -810,7 +810,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EE6F8A322F7A4C3A005E4E41 /* Build configuration list for PBXNativeTarget "hip" */ = {
+		EE6F8A322F7A4C3A005E4E41 /* Build configuration list for PBXNativeTarget "HIP Toolkit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EE6F8A332F7A4C3A005E4E41 /* Debug */,

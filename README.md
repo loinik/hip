@@ -31,8 +31,8 @@ A development kup for extracting, compiling, and decompiling game archives from 
 
 ## Requirements
 
-- **macOS 15 (Tahoe)** or later
-- Xcode 16+ for building
+- **macOS 26 (Tahoe)** or later
+- Xcode 26+ for building
 
 ## Building
 

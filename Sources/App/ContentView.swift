@@ -86,10 +86,12 @@ final class AppViewModel: ObservableObject {
     @Published var results:     [ConversionResult] = []
     @Published var isProcessing = false
     @Published var isDragging   = false
-    @Published var compileLua    = true
-    @Published var decompileLua  = false
+    @Published var compileLua         = true
+    @Published var decompileLua       = false
+    @Published var extractCifContents = true   // auto-decode CIF entries when unpacking Ciftree
+    @Published var capitalizeNames    = false  // uppercase entry names when packing (not extension)
     /// Sea of Darkness: encode PNG as CIF type 4 (OVL) instead of type 2.
-    @Published var useType4PNG   = false
+    @Published var useType4PNG        = false
 
     func clearResults() { withAnimation { results = [] } }
 
@@ -258,25 +260,26 @@ final class AppViewModel: ObservableObject {
         for file in contents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let ext  = file.pathExtension.lowercased()
             let stem = file.deletingPathExtension().lastPathComponent
+            let entryName = capitalizeNames ? stem.uppercased() : stem
             do {
                 switch ext {
                 case "cif":
-                    cifEntries.append((stem, try Data(contentsOf: file)))
+                    cifEntries.append((entryName, try Data(contentsOf: file)))
                 case "png", "jpg", "jpeg":
                     let cifType: UInt32 = useType4PNG ? 4 : 2
-                    cifEntries.append((stem, try HIPWrapper.encodePNG(atPath: file.path, cifType: cifType) as Data))
+                    cifEntries.append((entryName, try HIPWrapper.encodePNG(atPath: file.path, cifType: cifType) as Data))
                 case "lua":
-                    cifEntries.append((stem, try HIPWrapper.encodeLua(
+                    cifEntries.append((entryName, try HIPWrapper.encodeLua(
                         atPath: file.path, compileLua: compileLua) as Data))
                 case "xsheet":
-                    cifEntries.append((stem, try HIPWrapper.encodeXSheet(atPath: file.path) as Data))
+                    cifEntries.append((entryName, try HIPWrapper.encodeXSheet(atPath: file.path) as Data))
                 case "json":
                     if let jd = try? Data(contentsOf: file), let xsBody = xsheetFromJSON(jd) {
                         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent(UUID().uuidString)
                             .appendingPathExtension("xsheet")
                         try xsBody.write(to: tmp)
-                        cifEntries.append((stem, try HIPWrapper.encodeXSheet(atPath: tmp.path) as Data))
+                        cifEntries.append((entryName, try HIPWrapper.encodeXSheet(atPath: tmp.path) as Data))
                         try? FileManager.default.removeItem(at: tmp)
                     } else {
                         warnings.append(ConversionResult(
@@ -336,7 +339,7 @@ final class AppViewModel: ObservableObject {
             for entry in entries {
                 let outURL = outDir.appendingPathComponent(entry.name + ".cif")
                 try entry.cifData.write(to: outURL)
-                if decompileLua {
+                if extractCifContents {
                     rows.append(contentsOf: decodeCIF(outURL))
                 } else {
                     rows.append(ConversionResult(
@@ -454,7 +457,32 @@ struct ContentView: View {
                     .toggleStyle(.checkbox)
                     .help("Encode PNG as CIF type 4 (OVL overlay) instead of type 2 — for Sea of Darkness")
 
-            case .cifDecode, .ciftreeUnpack:
+            case .ciftreePack:
+                Divider().frame(height: 18)
+                Toggle("Compile Lua", isOn: $vm.compileLua)
+                    .toggleStyle(.checkbox)
+                    .help("Compile .lua source to bytecode before packing")
+                Divider().frame(height: 18)
+                Toggle("Capitalize names", isOn: $vm.capitalizeNames)
+                    .toggleStyle(.checkbox)
+                    .help("Uppercase entry names when packing (e.g. UI_MainMenu_OVL → UI_MAINMENU_OVL); extension stays lowercase")
+
+            case .cifDecode:
+                Divider().frame(height: 18)
+                Toggle(isOn: $vm.decompileLua) {
+                    HStack(spacing: 4) {
+                        Text("Decompile Lua")
+                        Text("ß").foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .help("Run luadec on extracted Lua bytecode (requires bundled luadec)")
+
+            case .ciftreeUnpack:
+                Divider().frame(height: 18)
+                Toggle("Extract CIF contents", isOn: $vm.extractCifContents)
+                    .toggleStyle(.checkbox)
+                    .help("Automatically decode each CIF entry to PNG, Lua, XSheet, etc. (incompatible types stay as .cif)")
                 Divider().frame(height: 18)
                 Toggle(isOn: $vm.decompileLua) {
                     HStack(spacing: 4) {
@@ -1405,9 +1433,11 @@ struct HISPreviewView: View {
 // MARK: - DAT (Ciftree) Preview
 
 private struct DatEntry: Identifiable {
-    let id   = UUID()
-    let name: String
-    let size: Int
+    let id      = UUID()
+    let name:    String
+    let size:    Int
+    let cifType: UInt32  // 2 PNG, 3 Lua, 4 OVL, 6 XSheet, 0 unknown
+    let cifData: Data
 }
 
 struct DatPreviewView: View {
@@ -1431,6 +1461,8 @@ struct DatPreviewView: View {
                         Label("\(entries.count) entries", systemImage: "archivebox")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
+                        Button("Extract…") { extractAll() }
+                            .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.small)
                         Text(ByteCountFormatter.string(
                             fromByteCount: Int64(entries.reduce(0) { $0 + $1.size }),
                             countStyle: .file) + " total")
@@ -1440,7 +1472,8 @@ struct DatPreviewView: View {
                     Divider()
                     List(entries) { entry in
                         HStack(spacing: 12) {
-                            Image(systemName: "doc.fill").foregroundStyle(.tint).frame(width: 20)
+                            Image(systemName: iconForEntry(entry))
+                                .foregroundStyle(.tint).frame(width: 20)
                             Text(entry.name + ".cif").font(.system(.body, design: .monospaced))
                             Spacer()
                             Text(ByteCountFormatter.string(fromByteCount: Int64(entry.size),
@@ -1457,10 +1490,37 @@ struct DatPreviewView: View {
         .task { await loadDat() }
     }
 
+    private func iconForEntry(_ entry: DatEntry) -> String {
+        switch entry.cifType {
+        case 6:    return "tablecells.fill"
+        case 2, 4: return "photo.fill"
+        default:   return "doc.fill"
+        }
+    }
+
+    private func extractAll() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories    = true
+        panel.canChooseFiles          = false
+        panel.allowsMultipleSelection = false
+        panel.prompt                  = "Extract Here"
+        panel.message                 = "Choose the destination folder for the extracted .cif files"
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        for entry in entries {
+            let outURL = dest.appendingPathComponent(entry.name + ".cif")
+            try? entry.cifData.write(to: outURL)
+        }
+    }
+
     private func loadDat() async {
         do {
             let raw = try HIPWrapper.unpackCiftree(atPath: url.path)
-            entries = raw.map { DatEntry(name: $0.name, size: $0.cifData.count) }
+            entries = raw.map { entry in
+                let data    = entry.cifData as Data
+                let cifType = data.count >= 32 ? data.le32(at: 28) : 0
+                return DatEntry(name: entry.name, size: data.count,
+                                cifType: cifType, cifData: data)
+            }
         } catch { errorMessage = error.localizedDescription }
         isLoading = false
     }

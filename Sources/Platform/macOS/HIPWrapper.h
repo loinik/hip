@@ -80,6 +80,11 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSData *)decodeHISAtPath:(NSString *)path
                                error:(NSError **)error;
 
+/// OGG Vorbis bytes → WAV (RIFF / PCM) for AVAudioPlayer playback.
+/// Uses the bundled stb_vorbis. Returns nil if the stream cannot be decoded.
++ (nullable NSData *)decodeOGGToWAVFromData:(NSData *)oggData
+                                      error:(NSError **)error;
+
 @end
 
 NS_ASSUME_NONNULL_END

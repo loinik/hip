@@ -33,7 +33,7 @@ enum AppMode {
 // MARK: - File-kind detection
 
 enum HIPFileKind {
-    case cif, his, dat, lua, image, ogg, xsheet, folder, unknown
+    case cif, his, dat, lua, image, ogg, xsheet, json, folder, unknown
 
     static func from(_ url: URL) -> HIPFileKind {
         if url.hasDirectoryPath { return .folder }
@@ -45,6 +45,7 @@ enum HIPFileKind {
         case "png", "jpg", "jpeg": return .image
         case "ogg":                return .ogg
         case "xsheet":             return .xsheet
+        case "json":               return .json
         default:                   return .unknown
         }
     }
@@ -59,6 +60,7 @@ enum HIPFileKind {
         case .ogg:     return (.his,     .forward)
         case .folder:  return (.ciftree, .forward)
         case .xsheet:  return (.cif,     .forward)
+        case .json:    return (.cif,     .forward)
         case .unknown: return nil
         }
     }
@@ -719,6 +721,7 @@ struct FilePreviewWindowView: View {
             case .image:  PlainImagePreviewView(url: url)
             case .ogg:    OGGPreviewView(url: url)
             case .xsheet: XSheetPreviewView(url: url)
+            case .json:   JSONXSheetPreviewView(url: url)
             default:
                 ContentUnavailableView(
                     "Cannot Preview",
@@ -788,8 +791,8 @@ private extension Data {
 /// What CIF body contains after decoding the header.
 private enum CIFContent {
     case image(NSImage, width: Int32, height: Int32, isOverlay: Bool)
-    case luaSource(String)
-    case luaBytecode(Int)
+    case luaSource(String, data: Data)
+    case luaBytecode(Int, data: Data)
     case xsheet(Data)
     case raw(type: Int32, size: Int)
 }
@@ -810,10 +813,13 @@ struct CIFPreviewView: View {
                 switch c {
                 case .image(let img, let w, let h, let ovl):
                     CIFImageView(image: img, width: w, height: h, isOverlay: ovl, sourceURL: url)
-                case .luaSource(let text):
-                    CodeView(text: text, badge: "Lua source", icon: "doc.text")
-                case .luaBytecode(let bytes):
-                    BytecodeView(bytes: bytes)
+                case .luaSource(let text, let data):
+                    CodeView(text: text, badge: "Lua source", icon: "doc.text",
+                             exportData: data,
+                             exportName: url.deletingPathExtension().lastPathComponent)
+                case .luaBytecode(let bytes, let data):
+                    BytecodeView(bytes: bytes, exportData: data,
+                                 exportName: url.deletingPathExtension().lastPathComponent)
                 case .xsheet(let data):
                     XSheetBodyView(data: data, sourceURL: url)
                 case .raw(let type, let size):
@@ -852,12 +858,13 @@ struct CIFPreviewView: View {
                     && data[0] == 0x1B && data[1] == 0x4C
                     && data[2] == 0x75 && data[3] == 0x61
                 if isCompiled {
-                    content = .luaBytecode(data.count)
+                    content = .luaBytecode(data.count, data: data)
                 } else {
                     content = .luaSource(
                         String(data: data, encoding: .utf8)
                         ?? String(data: data, encoding: .isoLatin1)
-                        ?? "<non-decodable>")
+                        ?? "<non-decodable>",
+                        data: data)
                 }
 
             } else if info.isXSheet {
@@ -900,10 +907,24 @@ private struct CIFImageView: View {
                 }
                 Label("\(width) × \(height) px", systemImage: "photo")
                 Spacer()
+                Button("Export PNG…") { exportPNG() }
+                    .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.small)
                 Text(sourceURL.lastPathComponent).foregroundStyle(.secondary)
             }
             .font(.caption)
             .padding(.horizontal, 16).padding(.vertical, 8)
+        }
+    }
+
+    private func exportPNG() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = sourceURL.deletingPathExtension().lastPathComponent + ".png"
+        panel.allowedContentTypes  = [.png]
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        guard let cgImg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let rep = NSBitmapImageRep(cgImage: cgImg)
+        if let data = rep.representation(using: .png, properties: [:]) {
+            try? data.write(to: dest)
         }
     }
 }
@@ -929,15 +950,26 @@ private struct CheckerboardView: View {
 }
 
 private struct CodeView: View {
-    let text:  String
-    let badge: String
-    let icon:  String
+    let text:       String
+    let badge:      String
+    let icon:       String
+    var exportData: Data?   = nil
+    var exportName: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Label(badge, systemImage: icon).font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                if let data = exportData, let name = exportName {
+                    Button("Export…") {
+                        let panel = NSSavePanel()
+                        panel.nameFieldStringValue = name + ".lua"
+                        panel.allowedContentTypes  = [UTType(filenameExtension: "lua") ?? .data]
+                        if panel.runModal() == .OK, let dest = panel.url { try? data.write(to: dest) }
+                    }
+                    .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.small)
+                }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
@@ -953,7 +985,10 @@ private struct CodeView: View {
 }
 
 private struct BytecodeView: View {
-    let bytes: Int
+    let bytes:      Int
+    var exportData: Data?   = nil
+    var exportName: String? = nil
+
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -967,6 +1002,15 @@ private struct BytecodeView: View {
             Text("Use the converter (CIF → File) with **Decompile Lua** enabled\nto extract readable source code.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if let data = exportData, let name = exportName {
+                Button("Save Bytecode (.lua)…") {
+                    let panel = NSSavePanel()
+                    panel.nameFieldStringValue = name + ".lua"
+                    panel.allowedContentTypes  = [UTType(filenameExtension: "lua") ?? .data]
+                    if panel.runModal() == .OK, let dest = panel.url { try? data.write(to: dest) }
+                }
+                .buttonStyle(.glass).buttonBorderShape(.capsule)
+            }
             Spacer()
         }
         .padding()
@@ -1196,6 +1240,8 @@ struct XSheetBodyView: View {
                 Label("XSheet Sprite Data", systemImage: "tablecells")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                Button("Export as .xsheet…") { exportXSheet() }
+                    .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.small)
                 Button("Export as JSON…") { exportJSON() }
                     .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.small)
                 Text(sourceURL.lastPathComponent).font(.caption).foregroundStyle(.tertiary)
@@ -1227,6 +1273,12 @@ struct XSheetBodyView: View {
             }
             .listStyle(.inset)
         }
+    }
+    private func exportXSheet() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = sourceURL.deletingPathExtension().lastPathComponent + ".xsheet"
+        panel.allowedContentTypes  = [UTType(filenameExtension: "xsheet") ?? .data]
+        if panel.runModal() == .OK, let dest = panel.url { try? data.write(to: dest) }
     }
     private func exportJSON() {
         guard let json = xsheetToJSON(data) else { return }
@@ -1278,13 +1330,14 @@ final class HISAudioController: ObservableObject {
     @Published var duration: Double = 0
     @Published var currentTime: Double = 0
 
-    private var player:    AVAudioPlayer?
-    private var tempURL:   URL?
-    private var timeTimer: Timer?
+    private var player:      AVAudioPlayer?
+    private var oggData:     Data?    // kept for OGG export
+    private var wavTempURL:  URL?     // temp .wav for AVAudioPlayer
+    private var timeTimer:   Timer?
 
     func load(from url: URL) {
         do {
-            // Parse duration from HIS header first (works without audio codec)
+            // 1. Parse duration from HIS header (works without a codec)
             let hisData = try Data(contentsOf: url)
             if hisData.count >= 32 {
                 let ch  = UInt32(hisData[10]) | UInt32(hisData[11]) << 8
@@ -1297,12 +1350,19 @@ final class HISAudioController: ObservableObject {
                 if bytesPerSec > 0 { duration = Double(pcm) / Double(bytesPerSec) }
             }
 
-            let oggData = try HIPWrapper.decodeHIS(atPath: url.path) as Data
-            decodedBytes = oggData.count
+            // 2. Strip HIS header → raw OGG
+            let ogg = try HIPWrapper.decodeHIS(atPath: url.path) as Data
+            oggData      = ogg
+            decodedBytes = ogg.count
+
+            // 3. Decode OGG → WAV using stb_vorbis for native AVAudioPlayer playback
+            let wav = try HIPWrapper.decodeOGGToWAV(from: ogg) as Data
             let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".ogg")
-            try oggData.write(to: tmp)
-            tempURL = tmp
+                .appendingPathComponent(UUID().uuidString + ".wav")
+            try wav.write(to: tmp)
+            wavTempURL = tmp
+
+            // 4. Load WAV (always works on macOS)
             if let p = try? AVAudioPlayer(contentsOf: tmp) {
                 player = p
                 canPlay = true
@@ -1331,12 +1391,12 @@ final class HISAudioController: ObservableObject {
     }
 
     func exportOGG(suggestedName: String) {
-        guard let tmp = tempURL else { return }
+        guard let data = oggData else { return }
         let save = NSSavePanel()
         save.nameFieldStringValue = suggestedName + ".ogg"
         save.allowedContentTypes  = [UTType(filenameExtension: "ogg") ?? .data]
         if save.runModal() == .OK, let dest = save.url {
-            try? FileManager.default.copyItem(at: tmp, to: dest)
+            try? data.write(to: dest)
         }
     }
 
@@ -1359,7 +1419,7 @@ final class HISAudioController: ObservableObject {
 
     deinit {
         timeTimer?.invalidate()
-        if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
+        if let u = wavTempURL { try? FileManager.default.removeItem(at: u) }
     }
 }
 
@@ -1506,7 +1566,9 @@ struct LuaPreviewView: View {
                 ContentUnavailableView("Read Error", systemImage: "exclamationmark.triangle",
                                        description: Text(err))
             } else if let src = source {
-                CodeView(text: src, badge: "Lua source", icon: "doc.text")
+                CodeView(text: src, badge: "Lua source", icon: "doc.text",
+                         exportData: Data(src.utf8),
+                         exportName: url.deletingPathExtension().lastPathComponent)
             } else {
                 ProgressView("Reading…")
             }
@@ -1554,6 +1616,7 @@ struct PlainImagePreviewView: View {
 struct OGGPreviewView: View {
     let url: URL
     @State private var player:    AVAudioPlayer?
+    @State private var wavTemp:   URL?
     @State private var isPlaying = false
 
     var body: some View {
@@ -1574,15 +1637,129 @@ struct OGGPreviewView: View {
             .buttonStyle(.plain)
             .foregroundStyle(player == nil ? Color.secondary : Color.accentColor)
             .disabled(player == nil)
-            .help(player == nil ? "OGG playback requires a system OGG codec" : "Play / Pause")
+            .help(player == nil ? "Decoding audio…" : "Play / Pause")
             Spacer()
         }
         .frame(minWidth: 320, minHeight: 320)
-        .task { player = try? AVAudioPlayer(contentsOf: url) }
+        .task {
+            guard let rawData = try? Data(contentsOf: url),
+                  let wavData = try? HIPWrapper.decodeOGGToWAV(from: rawData) as Data else { return }
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString + ".wav")
+            guard (try? wavData.write(to: tmp)) != nil else { return }
+            wavTemp = tmp
+            player  = try? AVAudioPlayer(contentsOf: tmp)
+        }
+        .onDisappear {
+            player?.stop()
+            if let u = wavTemp { try? FileManager.default.removeItem(at: u) }
+        }
     }
 }
 
-// MARK: - URL helper
+// MARK: - JSON XSheet Preview ───────────────────────────────────────────────────
+
+/// Shown when opening a .json file. Displays XSheet data if it contains the
+/// HerInteractive.XSheet marker, otherwise falls back to plain text.
+struct JSONXSheetPreviewView: View {
+    let url: URL
+    @State private var xsheetBody: Data?
+    @State private var rawText:    String?
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if !loaded {
+                ProgressView("Parsing…")
+            } else if let body = xsheetBody {
+                XSheetBodyView(data: body, sourceURL: url)
+            } else if let text = rawText {
+                CodeView(text: text, badge: "JSON", icon: "curlybraces",
+                         exportData: Data(text.utf8),
+                         exportName: url.deletingPathExtension().lastPathComponent)
+            } else {
+                ContentUnavailableView("Cannot read file", systemImage: "doc.badge.questionmark",
+                                       description: Text(url.lastPathComponent))
+            }
+        }
+        .frame(minWidth: 420, minHeight: 300)
+        .task {
+            if let jsonData = try? Data(contentsOf: url),
+               let body = xsheetFromJSON(jsonData) {
+                xsheetBody = body
+            } else {
+                rawText = try? String(contentsOf: url, encoding: .utf8)
+                    ?? String(contentsOf: url, encoding: .isoLatin1)
+            }
+            loaded = true
+        }
+    }
+}
+
+// MARK: - Preview Window Root (handles tabs + empty “+” window) ─────────────────────
+
+struct PreviewWindowRootView: View {
+    @Binding var url: URL?
+
+    var body: some View {
+        if let u = url {
+            FilePreviewWindowView(url: u)
+        } else {
+            PreviewEmptyWindowView { url = $0 }
+        }
+    }
+}
+
+struct PreviewEmptyWindowView: View {
+    let onOpen: (URL) -> Void
+    @State private var isDragging = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(
+                    isDragging ? Color.accentColor.opacity(0.7)
+                               : Color.secondary.opacity(0.2),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                .animation(.easeInOut(duration: 0.15), value: isDragging)
+            VStack(spacing: 14) {
+                Image(systemName: "eye")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(.secondary)
+                    .symbolEffect(.bounce, value: isDragging)
+                Text("Drop a file to preview")
+                    .font(.headline)
+                Text("CIF · HIS · DAT · Lua · XSheet · JSON · OGG · PNG")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                Button("Choose File…") { openPanel() }
+                    .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.small)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(40)
+        .frame(minWidth: 480, minHeight: 300)
+        .contentShape(Rectangle())
+        .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
+            providers.first?.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                guard let d = item as? Data,
+                      let u = URL(dataRepresentation: d, relativeTo: nil) else { return }
+                DispatchQueue.main.async { onOpen(u) }
+            }
+            return true
+        }
+    }
+
+    private func openPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles          = true
+        panel.canChooseDirectories    = false
+        panel.allowsMultipleSelection = false
+        panel.message                 = "Choose a file to preview"
+        if panel.runModal() == .OK, let u = panel.urls.first { onOpen(u) }
+    }
+}
+
+// MARK: - URL helper ────────────────────────────────────────────────────────
 
 private extension URL {
     var abbreviatingWithTildeInPath: String {

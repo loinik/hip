@@ -352,4 +352,67 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
     }
 }
 
+// ── OGG → WAV via stb_vorbis ──────────────────────────────────────────────
+
+// Forward-declare the one stb_vorbis function we need (implementation is in
+// Vendor/stb_vorbis.c which is compiled as a separate translation unit).
+extern "C" int stb_vorbis_decode_memory(const unsigned char *mem, int len,
+                                         int *channels, int *sample_rate,
+                                         short **output);
+
++ (nullable NSData *)decodeOGGToWAVFromData:(NSData *)oggData error:(NSError **)error {
+    if (!oggData.length) {
+        if (error) *error = hipError(@"Empty OGG data");
+        return nil;
+    }
+
+    int     channels   = 0;
+    int     sampleRate = 0;
+    short  *pcm        = nullptr;
+
+    int samples = stb_vorbis_decode_memory(
+        (const unsigned char *)oggData.bytes, (int)oggData.length,
+        &channels, &sampleRate, &pcm);
+
+    if (samples <= 0 || !pcm) {
+        if (error) *error = hipError(@"stb_vorbis: could not decode OGG Vorbis stream");
+        return nil;
+    }
+
+    const int bitsPerSample = 16;
+    const int dataSize      = samples * channels * (bitsPerSample / 8);
+    const int byteRate      = sampleRate * channels * (bitsPerSample / 8);
+    const int blockAlign    = channels * (bitsPerSample / 8);
+
+    NSMutableData *wav = [NSMutableData dataWithCapacity:44 + dataSize];
+
+    // Helper lambdas to write little-endian values
+    auto wL32 = [&](uint32_t v) {
+        uint8_t b[4] = { (uint8_t)(v), (uint8_t)(v>>8), (uint8_t)(v>>16), (uint8_t)(v>>24) };
+        [wav appendBytes:b length:4];
+    };
+    auto wL16 = [&](uint16_t v) {
+        uint8_t b[2] = { (uint8_t)(v), (uint8_t)(v>>8) };
+        [wav appendBytes:b length:2];
+    };
+    auto wCC = [&](const char *cc) { [wav appendBytes:cc length:4]; };
+
+    // RIFF header
+    wCC("RIFF");  wL32(36 + dataSize);  wCC("WAVE");
+    // fmt  chunk
+    wCC("fmt ");  wL32(16);
+    wL16(1);                             // PCM
+    wL16((uint16_t)channels);
+    wL32((uint32_t)sampleRate);
+    wL32((uint32_t)byteRate);
+    wL16((uint16_t)blockAlign);
+    wL16((uint16_t)bitsPerSample);
+    // data chunk
+    wCC("data");  wL32(dataSize);
+    [wav appendBytes:pcm length:dataSize];
+
+    free(pcm);
+    return [wav copy];
+}
+
 @end

@@ -10,7 +10,7 @@ import AVFoundation
 
 // MARK: - Binary helpers
 
-private extension Data {
+extension Data {
     func le32(at offset: Int) -> UInt32 {
         guard offset + 4 <= count else { return 0 }
         return withUnsafeBytes { ptr in
@@ -44,30 +44,32 @@ private extension Data {
 
 // MARK: - Shared magic
 
-private let kCIFMagic: [UInt8] = [
+let kCIFMagic: [UInt8] = [
     0x43,0x49,0x46,0x20,0x46,0x49,0x4C,0x45,0x20,
     0x48,0x65,0x72,0x49,0x6E,0x74,0x65,0x72,0x61,
     0x63,0x74,0x69,0x76,0x65,
     0x00,0x03,0x00,0x00,0x00
 ]
-private let kCIFHeaderSize = 48
+let kCIFHeaderSize = 48
 
-private struct CIFHeader {
+struct CIFHeader {
     let rawType:  UInt32
     let width:    UInt32
     let height:   UInt32
     let bodySize: UInt32
     var isPNG:    Bool { rawType == 2 }
+    var isOVL:    Bool { rawType == 4 }   // overlay PNG
     var isLua:    Bool { rawType == 3 }
     var isXSheet: Bool { rawType == 6 }
+    var isImage:  Bool { isPNG || isOVL }
 }
 
-private func parseCIFHeader(_ data: Data) -> CIFHeader? {
+func parseCIFHeader(_ data: Data) -> CIFHeader? {
     guard data.count >= kCIFHeaderSize, data.hasPrefix(kCIFMagic) else { return nil }
     return CIFHeader(rawType: data.le32(at: 28), width: data.le32(at: 32),
                      height: data.le32(at: 36), bodySize: data.le32(at: 44))
 }
-private func cifBody(_ data: Data) -> Data {
+func cifBody(_ data: Data) -> Data {
     data.count > kCIFHeaderSize ? data.suffix(from: kCIFHeaderSize) : Data()
 }
 

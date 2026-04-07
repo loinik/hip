@@ -2,7 +2,7 @@
 //  PreviewProvider.swift
 //  HIPQuickLook
 //
-//  Created by Mikel Lucyšyn on 4/5/26.
+//  Created by Mike Lucyšyn on 4/5/26.
 //
 
 import Cocoa

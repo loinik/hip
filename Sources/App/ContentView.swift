@@ -1,5 +1,4 @@
 // ContentView.swift
-// hip — HeR Interactive asset converter + inspector
 
 import SwiftUI
 import Combine
@@ -86,10 +85,10 @@ final class AppViewModel: ObservableObject {
     @Published var results:     [ConversionResult] = []
     @Published var isProcessing = false
     @Published var isDragging   = false
-    @Published var compileLua   = true
-    @Published var decompileLua = false
+    @Published var compileLua    = true
+    @Published var decompileLua  = false
     /// Sea of Darkness compatibility: encode PNG as CIF type 4 (OVL) instead of type 2.
-    @Published var useType4PNG  = false
+    @Published var useType4PNG   = false
 
     func clearResults() { withAnimation { results = [] } }
 
@@ -111,7 +110,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    // ── Entry point ──────────────────────────────────────────────────────
+    // Entry point
 
     func processURLs(_ urls: [URL]) {
         isProcessing = true
@@ -132,7 +131,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    // ── CIF encode ───────────────────────────────────────────────────────
+    // CIF encode
 
     private func encodeCIF(_ url: URL) -> ConversionResult {
         let name = url.lastPathComponent
@@ -179,7 +178,7 @@ final class AppViewModel: ObservableObject {
         } catch { return fail(name, error.localizedDescription) }
     }
 
-    // ── CIF decode ───────────────────────────────────────────────────────
+    // CIF decode
 
     private func decodeCIF(_ url: URL) -> [ConversionResult] {
         let name = url.lastPathComponent
@@ -194,13 +193,16 @@ final class AppViewModel: ObservableObject {
             switch info.type {
             case 2, 4: outExt = "png"      // type 4 = OVL overlay PNG
             case 3:    outExt = "lua"
-            case 6:    outExt = "xsheet"
+            case 6:
+                // _XS.cif files always export as JSON; other XSheet CIFs as .xsheet
+                let stem = url.deletingPathExtension().lastPathComponent
+                outExt = stem.hasSuffix("_XS") ? "json" : "xsheet"
             default:   outExt = "bin"
             }
 
             let outURL = url.deletingPathExtension().appendingPathExtension(outExt)
 
-            // ── Lua ──────────────────────────────────────────────────────
+            // Lua
             if info.isLua {
                 try data.write(to: outURL)
                 let isCompiled = data.count >= 4
@@ -230,7 +232,14 @@ final class AppViewModel: ObservableObject {
                 }
             }
 
-            // ── PNG (type 2 or 4) / XSheet / other ──────────────────────
+            // PNG (type 2 or 4) / XSheet / other
+            if info.isXSheet && outExt == "json" {
+                guard let jsonData = xsheetToJSON(data) else {
+                    return [fail(name, "XSheet → JSON conversion failed")]
+                }
+                try jsonData.write(to: outURL)
+                return [ok(name, "→ .json  " + sizeStr(jsonData.count) + " · XSheet JSON")]
+            }
             try data.write(to: outURL)
             var detail = sizeStr(data.count)
             if info.isPNG  { detail = "\(info.width)×\(info.height) · " + detail }
@@ -241,7 +250,7 @@ final class AppViewModel: ObservableObject {
         } catch { return [fail(name, error.localizedDescription)] }
     }
 
-    // ── Ciftree pack ─────────────────────────────────────────────────────
+    // Ciftree pack
 
     private func packCiftree(_ url: URL) -> [ConversionResult] {
         guard url.hasDirectoryPath else {
@@ -321,7 +330,7 @@ final class AppViewModel: ObservableObject {
         } catch { return [fail(url.lastPathComponent, error.localizedDescription)] }
     }
 
-    // ── Ciftree unpack ───────────────────────────────────────────────────
+    // Ciftree unpack
 
     private func unpackCiftree(_ url: URL) -> [ConversionResult] {
         guard url.pathExtension.lowercased() == "dat" else {
@@ -348,7 +357,7 @@ final class AppViewModel: ObservableObject {
         } catch { return [fail(url.lastPathComponent, error.localizedDescription)] }
     }
 
-    // ── HIS encode ───────────────────────────────────────────────────────
+    // HIS encode
 
     private func encodeHIS(_ url: URL) -> ConversionResult {
         let name = url.lastPathComponent
@@ -363,7 +372,7 @@ final class AppViewModel: ObservableObject {
         } catch { return fail(name, error.localizedDescription) }
     }
 
-    // ── HIS decode ───────────────────────────────────────────────────────
+    // HIS decode
 
     private func decodeHIS(_ url: URL) -> ConversionResult {
         let name = url.lastPathComponent
@@ -378,7 +387,7 @@ final class AppViewModel: ObservableObject {
         } catch { return fail(name, error.localizedDescription) }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────
+    // Helpers
 
     private func ok(_ t: String, _ d: String) -> ConversionResult {
         ConversionResult(icon: "checkmark.circle.fill",         tint: .green,  title: t, detail: d)
@@ -595,7 +604,7 @@ struct ContentView: View {
     private var dropSubtitle: String {
         switch vm.mode {
         case .cifEncode:     return "PNG/JPEG → CIF image · Lua → CIF script · XSheet / JSON → CIF sprite"
-        case .cifDecode:     return "CIF → PNG / .lua / .xsheet — saved next to original"
+        case .cifDecode:     return "CIF → PNG / .lua / .json / .xsheet — saved next to original"
         case .ciftreePack:   return "All supported files in the folder are converted and packed into .dat"
         case .ciftreeUnpack: return "Each embedded .cif is extracted to a folder next to the archive"
         case .hisEncode:     return "OGG Vorbis → HIS (HeR Interactive Sound)"
@@ -786,7 +795,7 @@ private extension Data {
     }
 }
 
-// MARK: - CIF Preview ────────────────────────────────────────────────────────
+// MARK: - CIF Preview
 
 /// What CIF body contains after decoding the header.
 private enum CIFContent {
@@ -1017,7 +1026,7 @@ private struct BytecodeView: View {
     }
 }
 
-// MARK: - XSheet Format ─────────────────────────────────────────────────────────
+// MARK: - XSheet Format
 //
 // Body layout (after the 48-byte CIF header):
 //
@@ -1063,19 +1072,25 @@ private func parseXSheet(_ data: Data) -> ParsedXSheet? {
 
     // -- Frame count: scan from end looking for N such that:
     //      data[end - N*24 - 4] == N  AND  frames 0..min(3,N-1) have sequential index
+    // Some files have a 24-byte trailing sentinel frame after the real frames, so
+    // try both data.count and data.count-24 as the effective end.
     var frameCount = 0
     var fcOff      = -1
 
-    let maxFrames = min(500, (data.count - 50) / 24)
-    for k in 1...maxFrames {
-        let pos = data.count - k * 24 - 4
-        if pos < 50 { break }
-        guard Int(data.le32(at: pos)) == k else { continue }
-        var valid = true
-        for f in 0..<min(k, 4) {
-            if Int(data.le32(at: pos + 4 + f * 24)) != f { valid = false; break }
+    outer: for trailingPad in [0, 24] {
+        let effectiveEnd = data.count - trailingPad
+        let maxFrames = min(500, (effectiveEnd - 50) / 24)
+        guard maxFrames >= 1 else { continue }
+        for k in 1...maxFrames {
+            let pos = effectiveEnd - k * 24 - 4
+            if pos < 50 { break }
+            guard Int(data.le32(at: pos)) == k else { continue }
+            var valid = true
+            for f in 0..<min(k, 4) {
+                if Int(data.le32(at: pos + 4 + f * 24)) != f { valid = false; break }
+            }
+            if valid { frameCount = k; fcOff = pos; break outer }
         }
-        if valid { frameCount = k; fcOff = pos; break }
     }
 
     guard fcOff >= 24 else { return nil }
@@ -1124,16 +1139,21 @@ private func parseXSheetFull(_ data: Data) -> XSheetFull? {
     }
 
     // Frame count (reverse scan)
+    // Some files have a 24-byte trailing sentinel frame; try both ends.
     var frameCount = 0
     var fcOff = -1
-    let maxFrames = min(500, (data.count - 50) / 24)
-    for k in 1...maxFrames {
-        let pos = data.count - k * 24 - 4
-        if pos < 50 { break }
-        guard Int(data.le32(at: pos)) == k else { continue }
-        var valid = true
-        for f in 0..<min(k, 4) { if Int(data.le32(at: pos + 4 + f * 24)) != f { valid = false; break } }
-        if valid { frameCount = k; fcOff = pos; break }
+    outer2: for trailingPad in [0, 24] {
+        let effectiveEnd = data.count - trailingPad
+        let maxFrames = min(500, (effectiveEnd - 50) / 24)
+        guard maxFrames >= 1 else { continue }
+        for k in 1...maxFrames {
+            let pos = effectiveEnd - k * 24 - 4
+            if pos < 50 { break }
+            guard Int(data.le32(at: pos)) == k else { continue }
+            var valid = true
+            for f in 0..<min(k, 4) { if Int(data.le32(at: pos + 4 + f * 24)) != f { valid = false; break } }
+            if valid { frameCount = k; fcOff = pos; break outer2 }
+        }
     }
     guard fcOff >= 24 else { return nil }
 
@@ -1319,7 +1339,7 @@ struct XSheetPreviewView: View {
     }
 }
 
-// MARK: - HIS Preview ────────────────────────────────────────────────────────
+// MARK: - HIS Preview
 
 @MainActor
 final class HISAudioController: ObservableObject {
@@ -1488,7 +1508,7 @@ struct HISPreviewView: View {
     }
 }
 
-// MARK: - DAT (Ciftree) Preview ──────────────────────────────────────────────
+// MARK: - DAT (Ciftree) Preview
 
 private struct DatEntry: Identifiable {
     let id   = UUID()
@@ -1553,7 +1573,7 @@ struct DatPreviewView: View {
     }
 }
 
-// MARK: - Lua Preview ─────────────────────────────────────────────────────────
+// MARK: - Lua Preview
 
 struct LuaPreviewView: View {
     let url: URL
@@ -1583,7 +1603,7 @@ struct LuaPreviewView: View {
     }
 }
 
-// MARK: - Plain Image Preview ─────────────────────────────────────────────────
+// MARK: - Plain Image Preview
 
 struct PlainImagePreviewView: View {
     let url: URL
@@ -1611,7 +1631,7 @@ struct PlainImagePreviewView: View {
     }
 }
 
-// MARK: - OGG Preview ─────────────────────────────────────────────────────────
+// MARK: - OGG Preview
 
 struct OGGPreviewView: View {
     let url: URL
@@ -1657,7 +1677,7 @@ struct OGGPreviewView: View {
     }
 }
 
-// MARK: - JSON XSheet Preview ───────────────────────────────────────────────────
+// MARK: - JSON XSheet Preview
 
 /// Shown when opening a .json file. Displays XSheet data if it contains the
 /// HerInteractive.XSheet marker, otherwise falls back to plain text.
@@ -1696,7 +1716,7 @@ struct JSONXSheetPreviewView: View {
     }
 }
 
-// MARK: - Preview Window Root (handles tabs + empty “+” window) ─────────────────────
+// MARK: - Preview Window Root (handles tabs + empty “+” window)
 
 struct PreviewWindowRootView: View {
     @Binding var url: URL?
@@ -1759,7 +1779,7 @@ struct PreviewEmptyWindowView: View {
     }
 }
 
-// MARK: - URL helper ────────────────────────────────────────────────────────
+// MARK: - URL helper
 
 private extension URL {
     var abbreviatingWithTildeInPath: String {

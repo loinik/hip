@@ -2,7 +2,7 @@
 //  CIFArchive.cpp
 //  CIF Tool
 //
-//  Created by Mikel Lucyšyn
+//  Created by Mike Lucyšyn
 
 #include "CIFArchive.hpp"
 

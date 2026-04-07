@@ -2,7 +2,7 @@
 //  hip-Bridging-Header.h
 //  hip
 //
-//  Created by Mikel Lucyšyn on 3/31/26.
+//  Created by Mike Lucyšyn on 3/31/26.
 //
 
 #import "HIPWrapper.h"

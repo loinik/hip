@@ -2,7 +2,7 @@
 //  hipApp.swift
 //  hip
 //
-//  Created by Mikel Lucyšyn on 3/30/26.
+//  Created by Mike Lucyšyn on 3/30/26.
 //
 
 import SwiftUI
@@ -14,8 +14,11 @@ struct hipApp: App {
         WindowGroup {
             ContentView()
         }
+        .handlesExternalEvents(matching: [])
+
         WindowGroup(id: "hip-toolkit.preview", for: URL.self) { $url in
             PreviewWindowRootView(url: $url)
+                .onOpenURL { url = $0 }
         }
         .defaultSize(width: 720, height: 520)
         .restorationBehavior(.disabled)

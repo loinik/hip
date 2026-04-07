@@ -2,7 +2,7 @@
 //  CIFArchive.hpp
 //  CIF Tool
 //
-//  Created by Mikel Lucyšyn
+//  Created by Mike Lucyšyn
 //
 
 #pragma once

@@ -738,7 +738,7 @@
 				INFOPLIST_FILE = Sources/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "HIP Toolkit";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Mike Lucyšyn × Nancy Drew Hub";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Mike Lucyšyn × Nancy Drew Hub\n\nThis project is for educational and preservation purposes only. It is not affiliated with or endorsed by HeR Interactive, inc. Use responsibly and respect copyright holders' rights.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -793,7 +793,7 @@
 				INFOPLIST_FILE = Sources/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "HIP Toolkit";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Mike Lucyšyn × Nancy Drew Hub";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Mike Lucyšyn × Nancy Drew Hub\n\nThis project is for educational and preservation purposes only. It is not affiliated with or endorsed by HeR Interactive, inc. Use responsibly and respect copyright holders' rights.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

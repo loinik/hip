@@ -415,6 +415,7 @@ final class AppViewModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var vm = AppViewModel()
     @Environment(\.openWindow) private var openWindow
+    @State private var showSupportAlert = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -426,6 +427,24 @@ struct ContentView: View {
         .frame(minWidth: 580, minHeight: 420)
         .toolbar { toolbarContent }
         .toolbar(removing: .title)
+        .background(WindowTabbingDisabler())
+        .alert("Support Us", isPresented: $showSupportAlert) {
+            Button("Donate on Ko-Fi") {
+                NSWorkspace.shared.open(URL(string: "https://ko-fi.com/nancydrewhub")!)
+            }
+            Button("Follow on Instagram") {
+                NSWorkspace.shared.open(URL(string: "https://instagram.com/nancydrewhub")!)
+            }
+            Button("Close", role: .cancel) { }
+        } message: {
+            Text("HIP Toolkit is built with care for the Nancy Drew community.\n\nIf you enjoy using it, consider supporting our team by donating or following us on Instagram.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hipOpenFile)) { _ in
+            openFileForPreview()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hipShowPreview)) { _ in
+            openWindow(id: "hip-toolkit.preview", value: URL?.none)
+        }
     }
 
     // MARK: Toolbar
@@ -438,12 +457,17 @@ struct ContentView: View {
             }
             .pickerStyle(.segmented)
         }
+        ToolbarItem(placement: .primaryAction) {
+            Button { showSupportAlert = true } label: {
+                Label("Support Us", systemImage: "heart")
+            }
+            .help("Support our team")
+        }
         ToolbarItem(placement: .confirmationAction) {
             Button(action: openFileForPreview) {
                 Label("Open…", systemImage: "folder")
             }
             .help("Open a file for inspection (⌘O)")
-            .keyboardShortcut("o", modifiers: .command)
         }
     }
 
@@ -1728,6 +1752,20 @@ struct PreviewEmptyWindowView: View {
 private extension URL {
     var abbreviatingWithTildeInPath: String {
         (path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
+// MARK: - Window Tabbing Disabler
+
+struct WindowTabbingDisabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> _TabbingDisablerView { _TabbingDisablerView() }
+    func updateNSView(_ v: _TabbingDisablerView, context: Context) {}
+
+    final class _TabbingDisablerView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.tabbingMode = .disallowed
+        }
     }
 }
 

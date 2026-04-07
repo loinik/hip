@@ -17,8 +17,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "EE61873B2F82B9D100EB6D27"
-               BuildableName = "HIPQuickLook.appex"
-               BlueprintName = "HIPQuickLook"
+               BuildableName = "HIP Quick Look.appex"
+               BlueprintName = "HIP Quick Look"
                ReferencedContainer = "container:HIP Toolkit.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

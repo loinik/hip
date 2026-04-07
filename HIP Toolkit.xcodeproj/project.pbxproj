@@ -45,7 +45,7 @@
 		EE6187352F829A8100EB6D27 /* lstate.c in Sources */ = {isa = PBXBuildFile; fileRef = EE6187032F829A8100EB6D27 /* lstate.c */; };
 		EE6187372F82A42800EB6D27 /* luadec in Resources */ = {isa = PBXBuildFile; fileRef = EE6187362F82A42800EB6D27 /* luadec */; };
 		EE61873F2F82B9D100EB6D27 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE61873E2F82B9D100EB6D27 /* Quartz.framework */; };
-		EE61874B2F82B9D100EB6D27 /* HIPQuickLook.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EE61873C2F82B9D100EB6D27 /* HIPQuickLook.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EE61874B2F82B9D100EB6D27 /* HIP Quick Look.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EE61873C2F82B9D100EB6D27 /* HIP Quick Look.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EE61877F2F83721300EB6D27 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EE61877B2F83721300EB6D27 /* Assets.xcassets */; };
 		EE6187812F83721300EB6D27 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE61877C2F83721300EB6D27 /* ContentView.swift */; };
 		EE6187822F83721300EB6D27 /* hipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE61877D2F83721300EB6D27 /* hipApp.swift */; };
@@ -71,7 +71,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				EE61874B2F82B9D100EB6D27 /* HIPQuickLook.appex in Embed Foundation Extensions */,
+				EE61874B2F82B9D100EB6D27 /* HIP Quick Look.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -143,7 +143,7 @@
 		EE6187152F829A8100EB6D27 /* Makefile */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.make; path = Makefile; sourceTree = "<group>"; };
 		EE6187162F829A8100EB6D27 /* print.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = print.c; sourceTree = "<group>"; };
 		EE6187362F82A42800EB6D27 /* luadec */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = luadec; sourceTree = "<group>"; };
-		EE61873C2F82B9D100EB6D27 /* HIPQuickLook.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HIPQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		EE61873C2F82B9D100EB6D27 /* HIP Quick Look.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "HIP Quick Look.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EE61873E2F82B9D100EB6D27 /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 		EE61877B2F83721300EB6D27 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EE61877C2F83721300EB6D27 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -156,9 +156,9 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		EE6187402F82B9D100EB6D27 /* HIPQuickLook */ = {
+		EE6187402F82B9D100EB6D27 /* QuickLook */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HIPQuickLook;
+			path = QuickLook;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -335,7 +335,7 @@
 			children = (
 				EE6187552F83701800EB6D27 /* Sources */,
 				EE6186BE2F829A4600EB6D27 /* Vendor */,
-				EE6187402F82B9D100EB6D27 /* HIPQuickLook */,
+				EE6187402F82B9D100EB6D27 /* QuickLook */,
 				EE61873D2F82B9D100EB6D27 /* Frameworks */,
 				EE6F8A282F7A4C38005E4E41 /* Products */,
 				EE5C69942F84DA2D007F90F4 /* Recovered References */,
@@ -347,7 +347,7 @@
 			isa = PBXGroup;
 			children = (
 				EE6F8A272F7A4C38005E4E41 /* HIP Toolkit.app */,
-				EE61873C2F82B9D100EB6D27 /* HIPQuickLook.appex */,
+				EE61873C2F82B9D100EB6D27 /* HIP Quick Look.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -355,9 +355,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EE61873B2F82B9D100EB6D27 /* HIPQuickLook */ = {
+		EE61873B2F82B9D100EB6D27 /* HIP Quick Look */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EE61874D2F82B9D100EB6D27 /* Build configuration list for PBXNativeTarget "HIPQuickLook" */;
+			buildConfigurationList = EE61874D2F82B9D100EB6D27 /* Build configuration list for PBXNativeTarget "HIP Quick Look" */;
 			buildPhases = (
 				EE6187382F82B9D100EB6D27 /* Sources */,
 				EE6187392F82B9D100EB6D27 /* Frameworks */,
@@ -368,13 +368,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				EE6187402F82B9D100EB6D27 /* HIPQuickLook */,
+				EE6187402F82B9D100EB6D27 /* QuickLook */,
 			);
-			name = HIPQuickLook;
+			name = "HIP Quick Look";
 			packageProductDependencies = (
 			);
 			productName = HIPQuickLook;
-			productReference = EE61873C2F82B9D100EB6D27 /* HIPQuickLook.appex */;
+			productReference = EE61873C2F82B9D100EB6D27 /* HIP Quick Look.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		EE6F8A262F7A4C38005E4E41 /* HIP Toolkit */ = {
@@ -432,7 +432,7 @@
 			projectRoot = "";
 			targets = (
 				EE6F8A262F7A4C38005E4E41 /* HIP Toolkit */,
-				EE61873B2F82B9D100EB6D27 /* HIPQuickLook */,
+				EE61873B2F82B9D100EB6D27 /* HIP Quick Look */,
 			);
 		};
 /* End PBXProject section */
@@ -516,7 +516,7 @@
 /* Begin PBXTargetDependency section */
 		EE61874A2F82B9D100EB6D27 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = EE61873B2F82B9D100EB6D27 /* HIPQuickLook */;
+			target = EE61873B2F82B9D100EB6D27 /* HIP Quick Look */;
 			targetProxy = EE6187492F82B9D100EB6D27 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -533,7 +533,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = HIPQuickLook/Info.plist;
+				INFOPLIST_FILE = QuickLook/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "HIP Quick Look";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -542,7 +542,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit.HIPQuickLook";
+				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit.QuickLook";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -564,7 +564,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = HIPQuickLook/Info.plist;
+				INFOPLIST_FILE = QuickLook/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "HIP Quick Look";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -573,7 +573,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit.HIPQuickLook";
+				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit.QuickLook";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -714,7 +714,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 3L864KU2J8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
@@ -738,13 +738,13 @@
 				INFOPLIST_FILE = Sources/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "HIP Toolkit";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Mike Lucyšyn × Nancy Drew Hub";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.1;
+				MARKETING_VERSION = 0.2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -769,7 +769,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 3L864KU2J8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
@@ -793,13 +793,13 @@
 				INFOPLIST_FILE = Sources/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "HIP Toolkit";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Mike Lucyšyn × Nancy Drew Hub";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.1;
+				MARKETING_VERSION = 0.2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "loinik.hip-toolkit";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -816,7 +816,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		EE61874D2F82B9D100EB6D27 /* Build configuration list for PBXNativeTarget "HIPQuickLook" */ = {
+		EE61874D2F82B9D100EB6D27 /* Build configuration list for PBXNativeTarget "HIP Quick Look" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EE61874E2F82B9D100EB6D27 /* Debug */,

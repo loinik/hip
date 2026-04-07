@@ -58,7 +58,8 @@ enum HIPFileKind {
         case .image:   return (.cif,     .forward)
         case .ogg:     return (.his,     .forward)
         case .folder:  return (.ciftree, .forward)
-        case .xsheet, .unknown: return nil
+        case .xsheet:  return (.cif,     .forward)
+        case .unknown: return nil
         }
     }
 }
@@ -86,7 +87,6 @@ final class AppViewModel: ObservableObject {
     @Published var compileLua   = true
     @Published var decompileLua = false
     /// Sea of Darkness compatibility: encode PNG as CIF type 4 (OVL) instead of type 2.
-    /// TODO: requires HIPWrapper.encodePNG(atPath:cifType:error:) — add uint32 type param to C++ side.
     @Published var useType4PNG  = false
 
     func clearResults() { withAnimation { results = [] } }
@@ -135,17 +135,19 @@ final class AppViewModel: ObservableObject {
     private func encodeCIF(_ url: URL) -> ConversionResult {
         let name = url.lastPathComponent
         let ext  = url.pathExtension.lowercased()
-        // useType4PNG is wired in UI; C++ side needs HIPWrapper.encodePNG(atPath:cifType:error:)
         do {
             let data: Data
             switch ext {
             case "png", "jpg", "jpeg":
-                data = try HIPWrapper.encodePNG(atPath: url.path) as Data
+                let cifType: UInt32 = useType4PNG ? 4 : 2
+                data = try HIPWrapper.encodePNG(atPath: url.path, cifType: cifType) as Data
             case "lua":
                 data = try HIPWrapper.encodeLua(atPath: url.path,
                                                 compileLua: compileLua) as Data
+            case "xsheet":
+                data = try HIPWrapper.encodeXSheet(atPath: url.path) as Data
             default:
-                return fail(name, "Unsupported: .\(ext)  (accepted: png jpg jpeg lua)")
+                return fail(name, "Unsupported: .\(ext)  (accepted: png jpg jpeg lua xsheet)")
             }
             let out = url.deletingPathExtension().appendingPathExtension("cif")
             try data.write(to: out)
@@ -158,6 +160,8 @@ final class AppViewModel: ObservableObject {
                 let wasCompiled = HIPWrapper.isCompiledLua(atPath: url.path)
                 detail += wasCompiled ? " · pre-compiled" : " · source"
             }
+            if ext == "xsheet" { detail += " · XSheet" }
+            if ["png","jpg","jpeg"].contains(ext) && useType4PNG { detail += " · type 4 OVL" }
             return ok(name, detail)
         } catch { return fail(name, error.localizedDescription) }
     }
@@ -175,7 +179,7 @@ final class AppViewModel: ObservableObject {
 
             let outExt: String
             switch info.type {
-            case 2, 4: outExt = "png"      // type 4 = OVL (Sea of Darkness overlay PNG)
+            case 2, 4: outExt = "png"      // type 4 = OVL overlay PNG
             case 3:    outExt = "lua"
             case 6:    outExt = "xsheet"
             default:   outExt = "bin"
@@ -216,9 +220,9 @@ final class AppViewModel: ObservableObject {
             // ── PNG (type 2 or 4) / XSheet / other ──────────────────────
             try data.write(to: outURL)
             var detail = sizeStr(data.count)
-            if info.isPNG || info.type == 4 { detail = "\(info.width)×\(info.height) · " + detail }
-            if info.isXSheet               { detail = "XSheet · " + detail }
-            if info.type == 4              { detail += " · OVL" }
+            if info.isPNG  { detail = "\(info.width)×\(info.height) · " + detail }
+            if info.isOVL  { detail = "\(info.width)×\(info.height) · " + detail + " · OVL" }
+            if info.isXSheet { detail = "XSheet · " + detail }
             return [ok(name, "→ .\(outExt)  " + detail)]
 
         } catch { return [fail(name, error.localizedDescription)] }
@@ -245,10 +249,13 @@ final class AppViewModel: ObservableObject {
                 case "cif":
                     cifEntries.append((stem, try Data(contentsOf: file)))
                 case "png", "jpg", "jpeg":
-                    cifEntries.append((stem, try HIPWrapper.encodePNG(atPath: file.path) as Data))
+                    let cifType: UInt32 = useType4PNG ? 4 : 2
+                    cifEntries.append((stem, try HIPWrapper.encodePNG(atPath: file.path, cifType: cifType) as Data))
                 case "lua":
                     cifEntries.append((stem, try HIPWrapper.encodeLua(
                         atPath: file.path, compileLua: compileLua) as Data))
+                case "xsheet":
+                    cifEntries.append((stem, try HIPWrapper.encodeXSheet(atPath: file.path) as Data))
                 default:
                     warnings.append(ConversionResult(
                         icon: "exclamationmark.triangle", tint: .orange,
@@ -416,9 +423,9 @@ struct ContentView: View {
                     .toggleStyle(.checkbox)
                     .help("Compile .lua source to bytecode before packing")
                 Divider().frame(height: 18)
-                Toggle("Type 4 PNG", isOn: $vm.useType4PNG)
+                Toggle("Type 4 OVL", isOn: $vm.useType4PNG)
                     .toggleStyle(.checkbox)
-                    .help("Sea of Darkness: encode PNG as CIF type 4 (OVL overlay) instead of type 2\n⚠ Requires HIPWrapper.encodePNG(atPath:cifType:error:) — see TODO in AppViewModel")
+                    .help("Encode PNG as CIF type 4 (OVL overlay) instead of type 2 — for Sea of Darkness")
 
             case .cifDecode, .ciftreeUnpack:
                 Divider().frame(height: 18)
@@ -551,7 +558,7 @@ struct ContentView: View {
     }
     private var dropTitle: String {
         switch vm.mode {
-        case .cifEncode:     return "Drag PNG, JPEG or Lua files"
+        case .cifEncode:     return "Drag PNG, JPEG, Lua or XSheet files"
         case .cifDecode:     return "Drag .cif files"
         case .ciftreePack:   return "Drag a folder"
         case .ciftreeUnpack: return "Drag a Ciftree .dat archive"
@@ -561,7 +568,7 @@ struct ContentView: View {
     }
     private var dropSubtitle: String {
         switch vm.mode {
-        case .cifEncode:     return "PNG/JPEG → CIF image · Lua → CIF script"
+        case .cifEncode:     return "PNG/JPEG → CIF image · Lua → CIF script · XSheet → CIF sprite"
         case .cifDecode:     return "CIF → PNG / .lua / .xsheet — saved next to original"
         case .ciftreePack:   return "All supported files in the folder are converted and packed into .dat"
         case .ciftreeUnpack: return "Each embedded .cif is extracted to a folder next to the archive"
@@ -608,9 +615,10 @@ struct ContentView: View {
         case .cifEncode:
             panel.allowedContentTypes = [
                 .png,
-                UTType(filenameExtension: "jpg")  ?? .data,
-                UTType(filenameExtension: "jpeg") ?? .data,
-                UTType(filenameExtension: "lua")  ?? .data,
+                UTType(filenameExtension: "jpg")    ?? .data,
+                UTType(filenameExtension: "jpeg")   ?? .data,
+                UTType(filenameExtension: "lua")    ?? .data,
+                UTType(filenameExtension: "xsheet") ?? .data,
             ]
         case .cifDecode:
             panel.allowedContentTypes = [UTType(filenameExtension: "cif") ?? .data]
@@ -725,7 +733,7 @@ private enum CIFContent {
     case image(NSImage, width: Int32, height: Int32, isOverlay: Bool)
     case luaSource(String)
     case luaBytecode(Int)
-    case xsheet(Data)          // raw xsheet bytes — parsed in XSheetBodyView
+    case xsheet(Data)
     case raw(type: Int32, size: Int)
 }
 
@@ -771,8 +779,8 @@ struct CIFPreviewView: View {
             let info = try HIPWrapper.readHeader(atPath: url.path)
             let data = try HIPWrapper.decode(atPath: url.path) as Data
 
-            // Type 2 = standard PNG; type 4 = OVL overlay PNG (Sea of Darkness)
-            if info.isPNG || info.type == 4 {
+            // Type 2 = standard PNG; type 4 = OVL overlay PNG
+            if info.isPNG || info.isOVL {
                 guard let img = NSImage(data: data) else {
                     throw NSError(domain: "hip", code: 1,
                                   userInfo: [NSLocalizedDescriptionKey: "Failed to decode image data"])
@@ -780,7 +788,7 @@ struct CIFPreviewView: View {
                 content = .image(img,
                                  width: Int32(info.width),
                                  height: Int32(info.height),
-                                 isOverlay: info.type == 4)
+                                 isOverlay: info.isOVL)
 
             } else if info.isLua {
                 let isCompiled = data.count >= 4
@@ -818,7 +826,6 @@ private struct CIFImageView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Checkerboard background for overlays (alpha channel visible)
             ZStack {
                 if isOverlay { CheckerboardView() }
                 Image(nsImage: image)
@@ -844,7 +851,6 @@ private struct CIFImageView: View {
     }
 }
 
-/// Simple checkerboard pattern for alpha transparency preview.
 private struct CheckerboardView: View {
     var body: some View {
         Canvas { ctx, size in
@@ -912,20 +918,26 @@ private struct BytecodeView: View {
 
 // MARK: - XSheet Format ─────────────────────────────────────────────────────────
 //
-// Binary format: "XSHEET HerInteractive\0..." (magic, padded to 28 bytes)
-// then some header bytes, then a null-terminated CNV name (associated PNG),
-// then a large zero-padded area, then:
-//   [x1: uint32][y1: uint32][x2: uint32][y2: uint32]  ← bounding rect
-//   [8 bytes padding / secondary data]
-//   [frameCount: uint32]
-//   [frame_0: 6×uint32 = 24 bytes]  ← first uint32 = frame index
-//   ...
-//   [frame_N: 6×uint32]
+// Body layout (after the 48-byte CIF header):
+//
+//   [0..21]   "XSHEET HerInteractive\0"  magic (22 bytes)
+//   [22..29]  header fields (version, cnv name length, flags)
+//   [30..31]  LE uint16 — CNV name length
+//   [32..33]  LE uint16 — flags
+//   [34..]    CNV name (null-terminated, length from above field)
+//   [34+len+] zero-padded to alignment
+//   ...       large zero block
+//   [fcOff-24..fcOff-9]  bounding rect: x1,y1,x2,y2 (4 × LE uint32 = 16 bytes)
+//   [fcOff-8..fcOff-1]   8 bytes padding
+//   [fcOff..fcOff+3]     frameCount (LE uint32)
+//   [fcOff+4..]          N × 24 bytes frame records (first uint32 = frame index)
+//
+// parseXSheet recovers these fields by scanning from the END of the body.
 
 private struct ParsedXSheet {
-    let cnvName:    String       // e.g. "MK_FINDB01_CNV"
-    let x1, y1:    Int          // bounding rect origin
-    let x2, y2:    Int          // bounding rect extent
+    let cnvName:    String
+    let x1, y1:    Int
+    let x2, y2:    Int
     let frameCount: Int
 }
 
@@ -937,7 +949,7 @@ private func parseXSheet(_ data: Data) -> ParsedXSheet? {
     var cnvName = ""
     var i = 28
     while i < min(data.count, 250) {
-        if data[i] >= 0x41 && data[i] < 0x7F {  // start of printable run
+        if data[i] >= 0x41 && data[i] < 0x7F {
             var nb: [UInt8] = []
             while i < data.count && data[i] >= 0x20 && data[i] < 0x7F {
                 nb.append(data[i]); i += 1
@@ -948,9 +960,8 @@ private func parseXSheet(_ data: Data) -> ParsedXSheet? {
         i += 1
     }
 
-    // -- Frame count and bounding rect: scan from end
-    //    Strategy: find N such that data[-N*24-4 .. -N*24-1] == N (LE uint32)
-    //    and verify frame 0 starts with 0, frame 1 with 1, etc.
+    // -- Frame count: scan from end looking for N such that:
+    //      data[end - N*24 - 4] == N  AND  frames 0..min(3,N-1) have sequential index
     var frameCount = 0
     var fcOff      = -1
 
@@ -959,7 +970,6 @@ private func parseXSheet(_ data: Data) -> ParsedXSheet? {
         let pos = data.count - k * 24 - 4
         if pos < 50 { break }
         guard Int(data.le32(at: pos)) == k else { continue }
-        // Verify sequential frame indices
         var valid = true
         for f in 0..<min(k, 4) {
             if Int(data.le32(at: pos + 4 + f * 24)) != f { valid = false; break }
@@ -969,7 +979,7 @@ private func parseXSheet(_ data: Data) -> ParsedXSheet? {
 
     guard fcOff >= 24 else { return nil }
 
-    // Bounding rect: 16 bytes of rect + 8 bytes padding before frameCount
+    // Bounding rect: 16 bytes of rect + 8 bytes padding immediately before frameCount
     let rectOff = fcOff - 8 - 16
     guard rectOff >= 0 else { return nil }
 
@@ -978,7 +988,6 @@ private func parseXSheet(_ data: Data) -> ParsedXSheet? {
     let x2 = Int(data.le32(at: rectOff + 8))
     let y2 = Int(data.le32(at: rectOff + 12))
 
-    // Sanity check: coords should be plausible screen coordinates
     guard x1 >= 0, y1 >= 0, x2 > x1, y2 > y1, x2 < 4096, y2 < 4096 else {
         return ParsedXSheet(cnvName: cnvName, x1: 0, y1: 0, x2: 0, y2: 0, frameCount: frameCount)
     }
@@ -1024,13 +1033,20 @@ struct XSheetBodyView: View {
                             .font(.system(.body, design: .monospaced))
                     }
                 }
-                Section("Bounding Rect") {
-                    LabeledContent("Origin (x1, y1)") { Text("\(p.x1), \(p.y1)") }
-                    LabeledContent("Extent (x2, y2)") { Text("\(p.x2), \(p.y2)") }
-                    LabeledContent("Sprite size")     { Text("\(p.x2 - p.x1) × \(p.y2 - p.y1) px") }
+                if p.x2 > p.x1 && p.y2 > p.y1 {
+                    Section("Bounding Rect") {
+                        LabeledContent("Origin (x1, y1)") { Text("\(p.x1), \(p.y1)") }
+                        LabeledContent("Extent (x2, y2)") { Text("\(p.x2), \(p.y2)") }
+                        LabeledContent("Sprite size")     { Text("\(p.x2 - p.x1) × \(p.y2 - p.y1) px") }
+                    }
                 }
                 Section("Animation") {
                     LabeledContent("Frame count") { Text("\(p.frameCount)") }
+                }
+                Section("Raw") {
+                    LabeledContent("Body size") {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))
+                    }
                 }
             }
             .listStyle(.inset)
@@ -1038,7 +1054,7 @@ struct XSheetBodyView: View {
     }
 }
 
-/// XSheet view for standalone .xsheet files opened via ⌘O / Finder.
+/// XSheet view for standalone .xsheet files (raw body, not CIF-wrapped).
 struct XSheetPreviewView: View {
     let url: URL
     @State private var parsed: ParsedXSheet?
@@ -1048,9 +1064,9 @@ struct XSheetPreviewView: View {
         Group {
             if !loaded {
                 ProgressView("Parsing…")
-            } else if let p = parsed {
-                XSheetBodyView(data: (try? Data(contentsOf: url)) ?? Data(), sourceURL: url)
-                    .task {}  // reuse body view; data already loaded
+            } else if let data = try? Data(contentsOf: url), let p = parsed {
+                XSheetBodyView(data: data, sourceURL: url)
+                    .task {}
             } else {
                 ContentUnavailableView(
                     "Invalid XSheet",

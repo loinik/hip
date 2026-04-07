@@ -36,6 +36,7 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
 
 @implementation CIFFileInfo
 - (BOOL)isPNG    { return self.type == 2; }
+- (BOOL)isOVL    { return self.type == 4; }
 - (BOOL)isLua    { return self.type == 3; }
 - (BOOL)isXSheet { return self.type == 6; }
 @end
@@ -52,6 +53,23 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
 // ── CIF encoding/decoding ──────────────────────────────────────────────
 
 + (nullable NSData *)encodePNGAtPath:(NSString *)path error:(NSError **)error {
+    return [self encodePNGAtPath:path cifType:2 error:error];
+}
+
++ (nullable NSData *)encodePNGAtPath:(NSString *)path
+                             cifType:(uint32_t)cifType
+                               error:(NSError **)error {
+    // Map uint32 → FileType; validate
+    CIF::FileType ft;
+    if (cifType == 4) {
+        ft = CIF::FileType::OVL;
+    } else {
+        ft = CIF::FileType::PNG;  // default / cifType == 2
+        if (cifType != 2) {
+            NSLog(@"HIPWrapper: unknown cifType %u, defaulting to PNG (type 2)", cifType);
+        }
+    }
+
     try {
         NSString *ext = path.pathExtension.lowercaseString;
         std::filesystem::path fsp(path.fileSystemRepresentation);
@@ -63,7 +81,6 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
                 if (error) *error = hipError(@"Cannot load JPEG image");
                 return nil;
             }
-            // Render to PNG data
             CGImageRef cgImg = [img CGImageForProposedRect:nil context:nil hints:nil];
             NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:cgImg];
             NSData *pngData = [rep representationUsingType:NSBitmapImageFileTypePNG
@@ -72,20 +89,29 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
                 if (error) *error = hipError(@"JPEG → PNG conversion failed");
                 return nil;
             }
-            // Write to temp file so CIF::encodePNG can read it
             NSURL *tmp = [NSURL fileURLWithPath:
                 [NSTemporaryDirectory() stringByAppendingPathComponent:
                     [[NSUUID UUID] UUIDString]]];
             [pngData writeToURL:tmp atomically:NO];
 
-            auto result = CIF::encodePNG(tmp.fileSystemRepresentation);
+            auto result = CIF::encodePNG(tmp.fileSystemRepresentation, ft);
             [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
             return vecToData(result);
         }
 
         // Native PNG
-        return vecToData(CIF::encodePNG(fsp));
+        return vecToData(CIF::encodePNG(fsp, ft));
 
+    } catch (const std::exception &e) {
+        if (error) *error = hipError(@(e.what()));
+        return nil;
+    }
+}
+
++ (nullable NSData *)encodeXSheetAtPath:(NSString *)path error:(NSError **)error {
+    try {
+        std::filesystem::path fsp(path.fileSystemRepresentation);
+        return vecToData(CIF::encodeXSheet(fsp));
     } catch (const std::exception &e) {
         if (error) *error = hipError(@(e.what()));
         return nil;
@@ -99,19 +125,13 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
         std::filesystem::path fsp(path.fileSystemRepresentation);
         auto body = CIF::readFile(fsp);
 
-        // Check if compilation is needed
         if (!CIF::isCompiledLua(body) && compileLua) {
             lua_State *L = luaL_newstate();
             
-            // Load script (parses and compiles to memory)
             if (luaL_loadfile(L, path.fileSystemRepresentation) == 0) {
                 NSMutableData *bytecodeData = [NSMutableData data];
-                
-                // Dump compiled bytecode
                 lua_dump(L, luaBytecodeWriter, (__bridge void *)bytecodeData);
                 
-                // CIF::encodeLua expects a file path,
-                // save bytecode to temporary file
                 NSString *tmpOut = [NSTemporaryDirectory() stringByAppendingPathComponent:
                                     [[[NSUUID UUID] UUIDString] stringByAppendingPathExtension:@"luac"]];
                 
@@ -119,13 +139,8 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
                     fsp = std::filesystem::path(tmpOut.fileSystemRepresentation);
                 }
             } else {
-                // If a syntax error occurred
                 const char *errMsg = lua_tostring(L, -1);
                 NSLog(@"Lua compilation failed for %@: %s", path, errMsg);
-                // To make the process fail on error, return error instead:
-                // if (error) *error = hipError([NSString stringWithUTF8String:errMsg]);
-                // return nil;
-                // Otherwise, continue and package the source as-is.
             }
             
             lua_close(L);
@@ -203,7 +218,6 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
     NSFileManager *fm = [NSFileManager defaultManager];
     NSDirectoryEnumerator *enumerator = [fm enumeratorAtPath:directoryPath];
     
-    // Lua 5.1 compiled bytecode magic signature
     const char luaMagic[] = "\x1BLua";
     NSData *magicData = [NSData dataWithBytes:luaMagic length:4];
     
@@ -214,49 +228,34 @@ static int luaBytecodeWriter(lua_State *L, const void *p, size_t size, void *u) 
         [fm fileExistsAtPath:fullPath isDirectory:&isDir];
         if (isDir) continue;
         
-        // Look for _SC files (or .luac if saved that way)
         if ([file hasSuffix:@"_SC"] || [file.pathExtension isEqualToString:@"luac"]) {
-            
             NSData *fileData = [NSData dataWithContentsOfFile:fullPath];
             if (!fileData || fileData.length < 4) continue;
             
-            // Find the start of actual Lua bytecode, skipping any CIF headers
             NSRange magicRange = [fileData rangeOfData:magicData
                                                options:0
                                                  range:NSMakeRange(0, fileData.length)];
             
             if (magicRange.location != NSNotFound) {
-                // Remove proprietary header
                 NSData *cleanBytecode = [fileData subdataWithRange:NSMakeRange(magicRange.location, fileData.length - magicRange.location)];
-                
-                // Save clean bytecode to temporary file
                 NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
                 [cleanBytecode writeToFile:tempPath atomically:YES];
                 
-                // Call the NSTask decompilation method
                 NSError *decError = nil;
                 NSString *decompiledCode = [self decompileLuaAtPath:tempPath error:&decError];
-                
-                // Remove temporary file
                 [fm removeItemAtPath:tempPath error:nil];
                 
                 if (decompiledCode) {
-                    // Create new name: replace "_SC" with ".lua"
                     NSString *newPath = fullPath;
                     if ([fullPath hasSuffix:@"_SC"]) {
                         newPath = [[fullPath substringToIndex:fullPath.length - 3] stringByAppendingPathExtension:@"lua"];
                     } else {
                         newPath = [[fullPath stringByDeletingPathExtension] stringByAppendingPathExtension:@"lua"];
                     }
-                    
-                    // Save decompiled source code
                     [decompiledCode writeToFile:newPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
-                    
-                    // Optional: Remove original binary _SC file, keep only clean .lua
                     if (![newPath isEqualToString:fullPath]) {
                         [fm removeItemAtPath:fullPath error:nil];
                     }
-                    
                     NSLog(@"Decompiled successfully: %@", file);
                 } else {
                     NSLog(@"Decompilation error for %@: %@", file, decError.localizedDescription);

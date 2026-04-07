@@ -42,7 +42,8 @@ std::vector<uint8_t> buildHeader(FileType type, uint32_t width,
     std::vector<uint8_t> h(HEADER_SIZE, 0x00);
     std::copy(MAGIC.begin(), MAGIC.end(), h.begin());
     writeLE32(h, 28, static_cast<uint32_t>(type));
-    if (type == FileType::PNG) {
+    // Both PNG (type 2) and OVL (type 4) carry width/height/format flag
+    if (type == FileType::PNG || type == FileType::OVL) {
         writeLE32(h, 32, width);
         writeLE32(h, 36, height);
         writeLE32(h, 40, 0x00000001);
@@ -86,7 +87,6 @@ void writeFile(const std::filesystem::path& path, const std::vector<uint8_t>& da
 }
 
 bool isCompiledLua(const std::vector<uint8_t>& data) {
-    // Compiled Lua 5.x starts with ESC + "Lua"
     return data.size() >= 4 &&
            data[0] == 0x1B && data[1] == 'L' &&
            data[2] == 'u'  && data[3] == 'a';
@@ -95,13 +95,17 @@ bool isCompiledLua(const std::vector<uint8_t>& data) {
 
 // -- Encoding ----------------------------------------------------------------
 
-// Note: JPEG → PNG conversion is handled in HIPWrapper.mm using AppKit
-// (NSImage → PNG), so this function only handles native PNG input.
-std::vector<uint8_t> encodePNG(const std::filesystem::path& imagePath) {
+// Note: JPEG → PNG conversion is handled in HIPWrapper.mm using AppKit.
+// type defaults to FileType::PNG (2); pass FileType::OVL (4) for overlay CIFs.
+std::vector<uint8_t> encodePNG(const std::filesystem::path& imagePath, FileType type) {
+    // Validate: only PNG and OVL are image types
+    if (type != FileType::PNG && type != FileType::OVL)
+        throw std::runtime_error("CIF: encodePNG called with non-image FileType");
+
     auto body = readFile(imagePath);
     uint32_t w = 0, h = 0;
     readPNGDimensions(body, w, h);
-    auto header = buildHeader(FileType::PNG, w, h, static_cast<uint32_t>(body.size()));
+    auto header = buildHeader(type, w, h, static_cast<uint32_t>(body.size()));
     std::vector<uint8_t> result;
     result.reserve(HEADER_SIZE + body.size());
     result.insert(result.end(), header.begin(), header.end());
@@ -112,6 +116,28 @@ std::vector<uint8_t> encodePNG(const std::filesystem::path& imagePath) {
 std::vector<uint8_t> encodeLua(const std::filesystem::path& luaPath) {
     auto body = readFile(luaPath);
     auto header = buildHeader(FileType::Lua, 0, 0, static_cast<uint32_t>(body.size()));
+    std::vector<uint8_t> result;
+    result.reserve(HEADER_SIZE + body.size());
+    result.insert(result.end(), header.begin(), header.end());
+    result.insert(result.end(), body.begin(), body.end());
+    return result;
+}
+
+std::vector<uint8_t> encodeXSheet(const std::filesystem::path& xsheetPath) {
+    auto body = readFile(xsheetPath);
+
+    // Validate: raw XSheet body starts with "XSHEET HerInteractive"
+    static constexpr char XSHEET_MAGIC[] = "XSHEET HerInteractive";
+    static constexpr size_t XSHEET_MAGIC_LEN = 21;
+    if (body.size() < XSHEET_MAGIC_LEN ||
+        std::memcmp(body.data(), XSHEET_MAGIC, XSHEET_MAGIC_LEN) != 0) {
+        throw std::runtime_error(
+            "CIF: encodeXSheet — file does not begin with XSHEET HerInteractive magic. "
+            "Expected raw XSheet body bytes (extracted from an existing .cif), "
+            "not a .cif-wrapped file.");
+    }
+
+    auto header = buildHeader(FileType::XSheet, 0, 0, static_cast<uint32_t>(body.size()));
     std::vector<uint8_t> result;
     result.reserve(HEADER_SIZE + body.size());
     result.insert(result.end(), header.begin(), header.end());

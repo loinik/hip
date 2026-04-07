@@ -4,13 +4,14 @@ NS_ASSUME_NONNULL_BEGIN
 // MARK: - Data types
 
 @interface CIFFileInfo : NSObject
-@property (nonatomic) uint32_t type;      // 2=PNG, 3=Lua, 6=XSheet
+@property (nonatomic) uint32_t type;      // 2=PNG, 3=Lua, 4=OVL, 6=XSheet
 @property (nonatomic) uint32_t width;
 @property (nonatomic) uint32_t height;
 @property (nonatomic) uint32_t bodySize;
-@property (nonatomic, readonly) BOOL isPNG;
-@property (nonatomic, readonly) BOOL isLua;
-@property (nonatomic, readonly) BOOL isXSheet;
+@property (nonatomic, readonly) BOOL isPNG;    // type == 2
+@property (nonatomic, readonly) BOOL isOVL;    // type == 4  (Sea of Darkness overlay PNG)
+@property (nonatomic, readonly) BOOL isLua;    // type == 3
+@property (nonatomic, readonly) BOOL isXSheet; // type == 6
 @end
 
 @interface CiftreeFileEntry : NSObject
@@ -24,8 +25,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 // ── Individual CIF ──────────────────────────────────────────────────────
 
-/// PNG or JPEG → CIF  (JPEG is auto-converted to PNG)
+/// PNG or JPEG → CIF type 2 (standard image).  JPEG is auto-converted to PNG.
 + (nullable NSData *)encodePNGAtPath:(NSString *)path
+                               error:(NSError **)error;
+
+/// PNG or JPEG → CIF with explicit type.
+/// Pass cifType=2 for standard PNG, cifType=4 for OVL overlay (Sea of Darkness).
+/// JPEG is auto-converted to PNG before encoding.
++ (nullable NSData *)encodePNGAtPath:(NSString *)path
+                             cifType:(uint32_t)cifType
                                error:(NSError **)error;
 
 /// Lua source or bytecode → CIF
@@ -33,7 +41,12 @@ NS_ASSUME_NONNULL_BEGIN
                           compileLua:(BOOL)compileLua
                                error:(NSError **)error;
 
-/// Lua bytecode → Lua plaintext
+/// Raw XSheet body (starting with "XSHEET HerInteractive\0") → CIF type 6.
+/// Pass the extracted body bytes, NOT an already-wrapped .cif file.
++ (nullable NSData *)encodeXSheetAtPath:(NSString *)path
+                                  error:(NSError **)error;
+
+/// Lua bytecode → Lua plaintext (requires bundled luadec)
 + (nullable NSString *)decompileLuaAtPath:(NSString *)path error:(NSError **)error;
 
 /// CIF → original bytes
